@@ -32,7 +32,7 @@ use Omnibridge\Schema\Relation;
  */
 final class EntityStore
 {
-    /** @var array<string, \Closure(EntityMap, Builder): void> */
+    /** @var array<string, \Closure(EntityMap, Builder, string): void> */
     private array $conditions = [];
 
     /** @var array<string, array<string, \ReflectionProperty>> */
@@ -78,10 +78,12 @@ final class EntityStore
     }
 
     /**
-     * A condition every query of the store adds while it is set (a backend's scope): it receives the class's map
-     * and the query, its tables aliased as EntityMap::alias() says.
+     * A condition every query of the store adds while it is set (a backend's scope): it receives the class's map,
+     * the query, and the prefix its tables are aliased under as EntityMap::alias() says - "t" in the class's own
+     * query (its WHERE), another where the finder joins the class to another's query (the join's ON, as Doctrine
+     * puts its SQL filters there).
      *
-     * @param \Closure(EntityMap, Builder): void $condition
+     * @param \Closure(EntityMap, Builder, string): void $condition
      */
     public function addCondition(string $name, \Closure $condition): void
     {
@@ -214,11 +216,20 @@ final class EntityStore
         if (null !== ($values = $map->discriminatorValues())) {
             $query->whereIn('t0.'.$map->discriminator(), $values);
         }
-        foreach ($this->conditions as $condition) {
-            $condition($map, $query);
-        }
+        $this->constrain($map, $query, 't');
 
         return $query;
+    }
+
+    /**
+     * The store's conditions (the scopes enabled) on a class whose tables are aliased under $prefix: its own query's
+     * "t", or a join's (JoinClause is a Builder: the conditions go into its ON).
+     */
+    public function constrain(EntityMap $map, Builder $query, string $prefix): void
+    {
+        foreach ($this->conditions as $condition) {
+            $condition($map, $query, $prefix);
+        }
     }
 
     /**
@@ -229,11 +240,40 @@ final class EntityStore
      */
     public function rows(EntityMap $map, Builder $query): array
     {
+        return array_column($this->read($map, $query), 0);
+    }
+
+    /**
+     * The entities of a query made by query() with the columns it selects besides theirs (the finder's counts,
+     * lengths, groups and selected expressions): each [the entity, the record as the database gave it], in order,
+     * one per record - a record repeated by a join gives the same entity again, as Doctrine's simple hydration does.
+     *
+     * @return list<array{0: object, 1: array<string, mixed>}>
+     */
+    public function results(EntityMap $map, Builder $query): array
+    {
+        $results = [];
+        foreach ($this->read($map, $query) as [$row, $record]) {
+            $results[] = [$this->entity($this->mapping->of($map->classOf($row)), $row), $record];
+        }
+
+        return $results;
+    }
+
+    /**
+     * The rows of a query, each [table => column => value, the raw record], a subclass's own tables read and added.
+     *
+     * @return list<array{0: array<string, array<string, mixed>>, 1: array<string, mixed>}>
+     */
+    private function read(EntityMap $map, Builder $query): array
+    {
         ++$this->queries;
         $selection = $this->selection($map->className(), $map->tables, 't');
         $rows = [];
+        $records = [];
         foreach ($query->get() as $record) {
-            $rows[] = self::unpack((array) $record, $selection);
+            $records[] = $record = (array) $record;
+            $rows[] = self::unpack($record, $selection);
         }
 
         // A subclass's tables beyond the class's (joined inheritance), read per class by identifier.
@@ -268,7 +308,7 @@ final class EntityStore
             }
         }
 
-        return $rows;
+        return array_map(null, $rows, $records);
     }
 
     /**

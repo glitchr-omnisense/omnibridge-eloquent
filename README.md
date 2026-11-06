@@ -63,12 +63,15 @@ and gives:
   base64 / AAGUID / trust path, each enumeration and set through its own `toPHPValue()`);
 - `EloquentBackend`: omnisense/omnibridge's `Backend` ("eloquent", lazy associations) with omnibase's trash and
   vault scopes added to every query while enabled, as Doctrine's filters are;
-- `EloquentRepositories`: the core's `Repositories` - `of()` (a plain `EloquentEntities`: find, findAll, and a
-  criteria array as Doctrine's `findBy()` reads one), `byIds()`, `oneById()`.
-
-Not yet (step F7b, second part): the finder language's compiler onto Illuminate's query builder, the
-implementations of the core's repository interfaces, the 14 `#[BackendOnly('doctrine')]` methods refused
-with `UnsupportedQueryException`.
+- `EloquentRepositories`: the core's `Repositories` - `of()` gives the core's repository on Eloquent for its entity and
+  its subclasses (one per interface of the core: `Threads`, `Users`, `Comments`...), an application's own
+  (`register()`), else the plain `EloquentEntities`; `implementing($interface)`, `byIds()`, `oneById()`;
+- **the finder language** (`EloquentFinder`): omnibase's finders - `findOneByEmailOrUsername()`,
+  `cacheOneByStateAndSlugStartingWith()`, `countForParentByState()`, `sumOfViewsBy()`... - read by the core's
+  `Finder\Parser` and compiled onto Illuminate's query builder word for word as omnibridge/doctrine compiles them to DQL
+  (the joins with the scopes in their ON, the Translatable join, the key, the groups, FIELD/RAND/JSON_ARRAY_POSITION,
+  the grouped counts and their rows); what it cannot express is refused aloud (`UnsupportedQueryException`), the 14
+  `#[BackendOnly('doctrine')]` methods among it. See [docs/finder.md](docs/finder.md).
 
 ## Tests
 
@@ -85,7 +88,12 @@ ghosts and collections read nothing until used; one object per row; scopes; writ
 repositories on the store, the backend's scopes; the core needed: `compose.checkouts.yml` until the core's 5.x with
 `EntitySchema` is served).
 
-`Site\ByIdParityTest` runs in an omnibase application's Symfony test kernel, the package copied into its
+`Omnibase\FinderTest` (the finder language on the fixtures) and `Omnibase\RepositoriesTest` (the core's 28 interfaces
+implemented, the 14 backend-only methods refused).
+
+`Harness\FinderParityTest` (in omnisense/omnibase's harness, SQLite) and `Site\FinderParityTest` (in an application,
+MySQL) run every finder call on both compilers, the same database, and compare the rows - see
+[docs/testing.md](docs/testing.md). `Site\ByIdParityTest` runs in an omnibase application's Symfony test kernel, the package copied into its
 vendor (`tests/Site/autoload.php` appends its class loader): every entity of the application read by id through
 Doctrine and through the store on the same connection, on a sample of the site's rows (with and without the
 trash scope) and on a row written for each class in a transaction rolled back - see [docs/testing.md](docs/testing.md).

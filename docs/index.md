@@ -11,7 +11,10 @@ composer require omnibridge/eloquent
 - [Reading entities](reading.md): the connection, the store, associations, the identity map, the casts, the unit of
   work.
 - [omnibase's persistence](omnibase.md): `EloquentPersistence`, the backend and its scopes, the repositories.
-- [Testing](testing.md): the suite, the comparison with Doctrine on an application's database.
+- [The finder language](finder.md): omnibase's finders compiled onto Illuminate's query builder, what is refused, the
+  differences with omnibridge/doctrine.
+- [Testing](testing.md): the suite, the comparisons with Doctrine (reads by id, the finder parity) in omnisense/omnibase's
+  harness and on an application's database.
 
 Step F7b of omnisense/omnibase's plan "omnibase agnostic" (the reads). Writing is step F7c: refused aloud until then
 (`UnsupportedPersistence`).

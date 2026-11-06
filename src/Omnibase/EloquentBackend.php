@@ -16,7 +16,8 @@ use Omnibridge\Persistence\UnitOfWork;
  * "eloquent", what it can do (lazy associations: ghosts and lazy collections; no second-level or result cache;
  * transactions with the writes, at F7c), its unit of work, and omnibase's scopes - the trash and the vault -
  * added to every query of the store while they are enabled, as Doctrine's TrashFilter and VaultFilter are: a
- * scope's criteria (Scope::criteria()) on the entity's columns, `deletedAt IS NULL`, `vault IS NULL OR vault = :environment`.
+ * scope's criteria (Scope::criteria()) on the entity's columns, `deletedAt IS NULL`, `vault IS NULL OR vault = :environment`
+ * - in the class's own query, and in the ON of a join of it (the finder's), as Doctrine puts its filters there.
  */
 final class EloquentBackend implements Backend
 {
@@ -50,12 +51,12 @@ final class EloquentBackend implements Backend
     public function enableScope(string $name, array $parameters = []): void
     {
         $scope = $this->scopes[$name] ?? throw new \InvalidArgumentException(sprintf('No scope "%s" on Eloquent (%s).', $name, implode(', ', array_keys($this->scopes))));
-        $this->unitOfWork->store()->addCondition('scope:'.$name, static function (EntityMap $map, Builder $query) use ($scope, $parameters): void {
+        $this->unitOfWork->store()->addCondition('scope:'.$name, static function (EntityMap $map, Builder $query, string $prefix = 't') use ($scope, $parameters): void {
             if (!$scope->appliesTo($map->className())) {
                 return;
             }
             foreach ($scope->criteria($map->className(), $parameters) as $field => $value) {
-                $column = $map->column($field);
+                $column = $map->column($field, $prefix);
                 if (null === $value) {
                     $query->whereNull($column);
                 } elseif (\is_array($value)) {

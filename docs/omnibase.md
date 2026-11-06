@@ -26,11 +26,12 @@ $user = $users->findOneBy(['email' => 'someone@example.org']);
   associations only (no second-level or result cache; transactions with the writes); `enableScope('trash')` adds
   `deletedAt IS NULL` to every query of a `#[Trasheable]` entity, `enableScope('vault', ['environment' => 'prod'])`
   `vault IS NULL OR vault = 'prod'` for a `#[Vault]` one - the core's `TrashScope` and `VaultScope`, what Doctrine's
-  filters compile.
-- **The repositories** (`EloquentRepositories`, the core's `Repositories`): `of($class)` an `EloquentEntities` (find,
-  findAll, findBy/findOneBy/count on a criteria array - a field or a to-one association equal to a value, an entity
-  or its identifier, IN a list, IS NULL - with an order); `byIds()`, `oneById()`.
+  filters compile -, in the class's WHERE and in the ON of a join of it (the finder's), as Doctrine's filters.
+- **The repositories** (`EloquentRepositories`, the core's `Repositories`): `of($class)` the core's repository on
+  Eloquent for its entity and its subclasses (`Repository\*`: each interface of `Base\Repository\Aliases::INTERFACES`),
+  an application's own (`register()`), else the plain `EloquentEntities`; `implementing($interface)`; `byIds()`,
+  `oneById()`. Every repository reads the finder language (`findOneByEmailOrUsername()`, `countByStateAnd...()`) and
+  `findBy()`'s criteria array as omnibridge/doctrine's `ServiceEntityRepository` reads them - see [the finder
+  language](finder.md). The 14 `#[BackendOnly('doctrine')]` methods are refused with `UnsupportedQueryException`.
 
-**Not yet** (step F7b, second part): the finder language (`findOneByEmailOrUsername()`, `countForAllCommentsIn()`...)
-compiled onto Illuminate's query builder, the core's repository interfaces (Users, Comments...), the 14
-`#[BackendOnly('doctrine')]` methods refused with `UnsupportedQueryException`. **Writes**: step F7c.
+**Writes**: step F7c (`UnsupportedPersistence` until then).

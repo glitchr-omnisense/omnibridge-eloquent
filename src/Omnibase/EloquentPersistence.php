@@ -19,8 +19,9 @@ use Omnibridge\Schema\Description;
  *     $persistence = EloquentPersistence::create(Connections::url($_ENV['DATABASE_URL']), ['project_dir' => $projectDir]);
  *     $article = $persistence->repositories()->oneById(Article::class, 12);
  *
- * Options: EntitySchema's (project_dir, enumerations, types, resolve_target_entities, rules, column_types) and
- * `directories` (more entity folders, a bundle's).
+ * Options: EntitySchema's (project_dir, enumerations, types, resolve_target_entities, rules, column_types),
+ * `directories` (more entity folders, a bundle's) and `repositories` (an application's repositories on the store, by
+ * entity: EloquentRepositories::register()).
  */
 final class EloquentPersistence
 {
@@ -41,7 +42,7 @@ final class EloquentPersistence
         $store = new EntityStore($connection, new Mapping($description), $casts ?? OmnibaseCasts::create($options));
         $unitOfWork = new EloquentUnitOfWork($store);
 
-        return new self($store, $unitOfWork, new EloquentBackend($unitOfWork), new EloquentRepositories($store));
+        return new self($store, $unitOfWork, new EloquentBackend($unitOfWork), new EloquentRepositories($store, $options['repositories'] ?? []));
     }
 
     public function store(): EntityStore

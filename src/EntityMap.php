@@ -23,7 +23,9 @@ use Omnibridge\Schema\Relation;
  *   the rows of its own value and its subclasses' (discriminatorValues()).
  *
  * The tables of a query are aliased t0 (the root's), t1... in that order
- * (alias(), column()), the extra tables of a subclass after them.
+ * (alias(), column()), the extra tables of a subclass after them; another
+ * prefix than "t" names them where the class is joined to another's query
+ * (the finder's joins: j1_0, j1_1...).
  */
 final class EntityMap
 {
@@ -91,15 +93,15 @@ final class EntityMap
         return $this->entity->class;
     }
 
-    /** The table alias of one of the class's tables: t0 for the root's. */
-    public function alias(string $table): string
+    /** The table alias of one of the class's tables: t0 for the root's (j1_0 under the prefix "j1_"). */
+    public function alias(string $table, string $prefix = 't'): string
     {
         $index = array_search($table, $this->tables, true);
         if (false === $index) {
             throw new \OutOfBoundsException(\sprintf('The table %s is none of %s\'s (%s).', $table, $this->entity->class, implode(', ', $this->tables)));
         }
 
-        return 't'.$index;
+        return $prefix.$index;
     }
 
     /** The table holding a field or an owning to-one association's column. */
@@ -109,14 +111,20 @@ final class EntityMap
     }
 
     /** "alias.column" of a field, or of an owning to-one association's (first) join column. */
-    public function column(string $property): string
+    public function column(string $property, string $prefix = 't'): string
     {
         $table = $this->tableOf($property);
         if (isset($this->entity->fields[$property])) {
-            return $this->alias($table).'.'.$this->entity->fields[$property]->column;
+            return $this->alias($table, $prefix).'.'.$this->entity->fields[$property]->column;
         }
 
-        return $this->alias($table).'.'.$this->joinColumn($this->entity->relations[$property]);
+        return $this->alias($table, $prefix).'.'.$this->joinColumn($this->entity->relations[$property]);
+    }
+
+    /** Whether a field or an owning to-one association has a column of its own (column() answers for it). */
+    public function hasColumn(string $property): bool
+    {
+        return isset($this->tableOf[$property]);
     }
 
     /** The column an owning to-one association keeps its target's identifier in. */
@@ -130,9 +138,9 @@ final class EntityMap
     }
 
     /** "t0.id": the identifier's column in the root's table (one column; composite identifiers are read by row). */
-    public function idColumns(): array
+    public function idColumns(string $prefix = 't'): array
     {
-        return array_map(fn (Field $field): string => 't0.'.$field->column, $this->identifier);
+        return array_map(fn (Field $field): string => $prefix.'0.'.$field->column, $this->identifier);
     }
 
     /** The discriminator's column in the root's table, null without inheritance. */

@@ -83,7 +83,8 @@ final class OmnibasePartTest extends TestCase
         self::assertSame(1, $threads->count(['title' => ['One', 'Nope']]));
         self::assertSame('Two', $threads->findOneBy(['title' => 'Two'])?->getTitle());
         self::assertNull($threads->findOneBy(['parent' => 1]));
-        self::assertCount(3, $threads->findBy(['parent' => null]));
+        self::assertSame([], $threads->findBy(['parent' => null]), 'null compares `= NULL`, as omnibase\'s finder (ServiceEntityRepository::findBy()) compares it');
+        self::assertCount(3, $threads->findByParentNull()->getResult());
         self::assertSame([$this->ids['two'], $this->ids['one']], array_map(static fn (Thread $thread): ?int => $thread->getId(), $repositories->byIds(Thread::class, [$this->ids['two'], $this->ids['one']])));
         self::assertSame(['Two', 'Three'], array_map(static fn (Thread $thread): string => $thread->getTitle(), $threads->findBy([], ['title' => 'DESC'], 2)));
         $this->expectException(UnsupportedPersistence::class);

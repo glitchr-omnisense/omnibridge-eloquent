@@ -3,28 +3,61 @@
 namespace Omnibridge\Eloquent\Omnibase;
 
 use Base\Database\Repository\Entities;
-use Illuminate\Database\Query\Builder;
 use Omnibridge\Eloquent\EntityMap;
 use Omnibridge\Eloquent\EntityStore;
+use Omnibridge\Eloquent\Omnibase\Finder\EloquentFinder;
+use Omnibridge\Eloquent\Omnibase\Finder\FinderQuery;
 use Omnibridge\Eloquent\UnsupportedPersistence;
 
 /**
- * omnibase's Entities (a repository's plain half) on the store, for a class no repository interface of the core
- * names (plan "omnibase agnostic", step F7b): find(), findAll(), and findBy(), findOneBy() and count() on a
- * criteria array as Doctrine's EntityRepository reads one - a field or a to-one association (an entity or its
- * identifier) equal to a value, IN a list, IS NULL for null - with an order on fields. persist(), remove() and
- * flush() write: refused (UnsupportedPersistence) until step F7c.
+ * omnibase's repository on the store (plan "omnibase agnostic", step F7b): the core's Entities - find(), findAll(),
+ * findBy(), findOneBy(), count() - and the finder language (findBySlug(), cacheOneByStateAndSlugStartingWith(),
+ * countForParentByState()...), both compiled by EloquentFinder on Illuminate's query builder as omnibridge/doctrine's
+ * ServiceEntityRepository compiles them on Doctrine: findBy()'s criteria array reads the words a name would (a list
+ * IN, a Key without a join, a Group in parentheses, an association joined), its order the finder's (a path, FIELD(),
+ * RAND()). A finder that hands back Doctrine's Query hands back a FinderQuery (getResult(), getOneOrNullResult()).
+ *
+ * The base of the core's repositories on Eloquent (Repository\*) and the repository of any other class.
+ * persist(), remove() and flush() write: refused (UnsupportedPersistence) until step F7c.
  *
  * @template T of object
  *
  * @implements Entities<T>
+ *
+ * @method FinderQuery findAll()
  */
-final class EloquentEntities implements Entities
+class EloquentEntities implements Entities
 {
+    private ?EloquentFinder $finder = null;
+
+    /** @param class-string<T> $class */
     public function __construct(
-        private readonly EntityStore $store,
-        private readonly string $class,
+        protected readonly EntityStore $store,
+        protected readonly string $class,
     ) {
+    }
+
+    /** The class the repository reads (its rows: of it and its subclasses). */
+    public function getClassName(): string
+    {
+        return $this->entityMap()->className();
+    }
+
+    /** The class's tables and columns (EntityMap). */
+    public function entityMap(): EntityMap
+    {
+        return $this->store->mapping()->of($this->class);
+    }
+
+    public function finder(): EloquentFinder
+    {
+        return $this->finder ??= new EloquentFinder($this->store, $this->entityMap());
+    }
+
+    /** The finder language: findBy...(), findOneBy...(), cache...(), count...(), lengthOf...(), sumOf...()... */
+    public function __call(string $method, array $arguments): mixed
+    {
+        return $this->finder()->parse($method, $arguments);
     }
 
     public function find($id): ?object
@@ -34,37 +67,44 @@ final class EloquentEntities implements Entities
 
     public function findAll(): array
     {
-        return $this->findBy([]);
+        return $this->__call('findAll', [])->getResult();
     }
 
     public function findBy(array $criteria, ?array $orderBy = null, $limit = null, $offset = null): array
     {
-        return $this->store->select($this->class, function (Builder $query, EntityMap $map) use ($criteria, $orderBy, $limit, $offset): void {
-            $this->where($query, $map, $criteria);
-            foreach ($orderBy ?? [] as $property => $direction) {
-                $query->orderBy($map->column($property), 'DESC' === strtoupper((string) $direction) ? 'desc' : 'asc');
-            }
-            if (null !== $limit) {
-                $query->limit((int) $limit);
-            }
-            if (null !== $offset) {
-                $query->offset((int) $offset);
-            }
-        });
+        return $this->__call('findBy', [$criteria, $orderBy, $limit, $offset])->getResult();
     }
 
     public function findOneBy(array $criteria, ?array $orderBy = null): ?object
     {
-        return $this->findBy($criteria, $orderBy, 1)[0] ?? null;
+        return $this->__call('findOneBy', [$criteria, $orderBy]);
     }
 
     public function count(array $criteria = []): int
     {
-        $map = $this->store->mapping()->of($this->class);
-        $query = $this->store->query($map);
-        $this->where($query, $map, $criteria);
+        return (int) $this->__call('count', [$criteria]);
+    }
 
-        return $query->count();
+    /**
+     * Query-by-Example (ServiceEntityRepository::findByExample()): the set fields and to-one associations of a select
+     * object as findBy()'s criteria; a select setting none refused, rather than every row read.
+     *
+     * @return list<T>
+     */
+    public function findByExample(object $select, ?array $orderBy = null, $limit = null, $offset = null): array
+    {
+        $criteria = $this->criteriaFromSelect($select);
+        if (empty($criteria)) {
+            throw new \Exception(sprintf('findByExample() received a select (%s) with no queryable set fields — refusing to match the whole "%s" table. Use findAll() instead.', $select::class, $this->getClassName()));
+        }
+
+        return $this->findBy($criteria, $orderBy, $limit, $offset);
+    }
+
+    /** @return array<string, mixed> */
+    public function criteriaFromSelect(object $select): array
+    {
+        return $this->finder()->subject()->criteriaFromSelect($select);
     }
 
     public function persist($entity, bool $flush = false): void
@@ -80,24 +120,5 @@ final class EloquentEntities implements Entities
     public function flush(bool $autoclear = false)
     {
         throw UnsupportedPersistence::writes('flush');
-    }
-
-    /** @param array<string, mixed> $criteria */
-    private function where(Builder $query, EntityMap $map, array $criteria): void
-    {
-        foreach ($criteria as $property => $value) {
-            $column = $map->column($property);
-            $type = isset($map->entity->fields[$property])
-                ? $map->entity->fields[$property]->type
-                : $this->store->mapping()->of($map->entity->relation($property)->target)->identifier[0]->type;
-            $bind = fn (mixed $value): mixed => $this->store->casts()->toDatabase($type, \is_object($value) && $this->store->mapping()->has($value::class) ? $this->store->identifier($value) : ($value instanceof \BackedEnum ? $value->value : $value));
-            if (null === $value) {
-                $query->whereNull($column);
-            } elseif (\is_array($value)) {
-                $query->whereIn($column, array_map($bind, array_values($value)));
-            } else {
-                $query->where($column, '=', $bind($value));
-            }
-        }
     }
 }
