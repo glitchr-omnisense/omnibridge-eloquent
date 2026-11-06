@@ -1,0 +1,59 @@
+{
+    "name": "omnibridge/eloquent",
+    "description": "omnibase's entities on Eloquent's database layer, framework-free: illuminate/database (Laravel's connection, or Capsule outside Laravel) reading the tables omnisense/omnibridge's Omnibridge\\Schema describes into the same plain PHP entities Doctrine maps - a data mapper: tables from the description, a hydrator with PHP 8.4 lazy ghosts and lazy collections, an identity map, casts; and omnibase's persistence on Eloquent (Omnibridge\\Eloquent\\Omnibase\\: its backend, scopes, repositories and finder compiler) when omnisense/omnibase is installed.",
+    "type": "library",
+    "keywords": [
+        "omnibridge",
+        "omnibase",
+        "eloquent",
+        "data-mapper",
+        "framework-agnostic"
+    ],
+    "homepage": "https://github.com/glitchr-omnisense/omnibridge-eloquent",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Marco Meyer"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "doctrine/collections": "^2.2|^3.0",
+        "illuminate/database": "^12.0|^13.0",
+        "omnisense/omnibridge": "^1.0"
+    },
+    "require-dev": {
+        "omnibridge/doctrine": "1.x-dev",
+        "omnisense/omnibase": "5.x-dev",
+        "phpunit/phpunit": "^11.5"
+    },
+    "suggest": {
+        "omnisense/omnibase": "Omnibridge\\Eloquent\\Omnibase\\: omnibase's persistence on Eloquent (its backend and scopes, the repositories, the finder compiler); loaded only with the core"
+    },
+    "autoload": {
+        "psr-4": {
+            "Omnibridge\\Eloquent\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Omnibridge\\Eloquent\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-1.x": "1.x-dev"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "omnibridge/composer": true
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    }
+}

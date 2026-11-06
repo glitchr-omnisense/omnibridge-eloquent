@@ -1,0 +1,14 @@
+# The test suite: docker compose run --rm test
+# omnisense/omnibase (require-dev: the entities the suite reads, and omnibridge/doctrine to compare with) asks for
+# extensions (imagick, igbinary...) that nothing here loads: the install does without them.
+# The checkouts beside this one instead of the published packages: add compose.checkouts.yml.
+services:
+  test:
+    build: docker
+    image: omnibridge-eloquent:php8.4
+    volumes:
+      - .:/package
+      - composer-cache:/tmp/composer/cache
+    command: sh -c "composer update --no-progress --ignore-platform-req='ext-*' && vendor/bin/phpunit"
+volumes:
+  composer-cache:

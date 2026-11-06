@@ -1,0 +1,10 @@
+# The family's checkouts mounted over the installed packages (OMNIBASE: the omnibase workspace, ../../omnibase;
+# OMNIBRIDGE: ../): what is edited is what the suite reads.
+#
+#   docker compose -f compose.yml -f compose.checkouts.yml run --rm test
+services:
+  test:
+    volumes:
+      - ${OMNIBASE:-../../omnibase}/core:/package/vendor/omnisense/omnibase:ro
+      - ${OMNIBRIDGE:-..}/core:/package/vendor/omnisense/omnibridge:ro
+      - ${OMNIBRIDGE:-..}/doctrine:/package/vendor/omnibridge/doctrine:ro
