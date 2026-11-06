@@ -4,6 +4,7 @@ namespace Omnibridge\Eloquent\Omnibase;
 
 use Base\Database\Repository\Entities;
 use Base\Database\Repository\Repositories;
+use Omnibridge\Eloquent\EloquentUnitOfWork;
 use Omnibridge\Eloquent\EntityStore;
 use Omnibridge\Eloquent\Omnibase\Repository as R;
 
@@ -62,7 +63,7 @@ final class EloquentRepositories implements Repositories
     private array $classes;
 
     /** @param array<class-string, class-string<EloquentEntities<object>>> $classes an application's repositories by entity, over the core's */
-    public function __construct(private readonly EntityStore $store, array $classes = [])
+    public function __construct(private readonly EntityStore $store, array $classes = [], private readonly ?EloquentUnitOfWork $unitOfWork = null)
     {
         $this->classes = $classes + self::CORE;
     }
@@ -85,7 +86,7 @@ final class EloquentRepositories implements Repositories
 
     public function of(string $class): Entities
     {
-        return $this->repositories[$class] ??= new ($this->repositoryClass($class))($this->store, $class);
+        return $this->repositories[$class] ??= new ($this->repositoryClass($class))($this->store, $class, $this->unitOfWork);
     }
 
     /**

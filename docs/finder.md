@@ -70,7 +70,7 @@ date) is refused with the same message.
 (`Repository\*`, one per interface of `Base\Repository\Aliases::INTERFACES`: `Threads`, `Users`, `Comments`, `Tags`,
 `ThreadTranslations`, the analytics, the hours...). An application registers its own with `register()`, and any other
 class gets the plain `EloquentEntities`. `implementing($interface)` gives the repository of a core interface. Writes
-(`persist`, `remove`, `flush`, `ScopedWeeks::save()`...) are refused until step F7c (`UnsupportedPersistence`).
+(`persist`, `remove`, `flush`, `ScopedWeeks::save()`...) go through the unit of work ([Writing entities](writing.md)).
 
 ## Known differences with omnibridge/doctrine
 

@@ -23,7 +23,6 @@ use Omnibridge\Eloquent\Tests\Fixtures\Entity\Thread;
 use Omnibridge\Eloquent\Tests\Fixtures\Entity\Translation;
 use Omnibridge\Eloquent\Tests\Fixtures\Entity\User;
 use Omnibridge\Eloquent\Tests\Support\Normaliser;
-use Omnibridge\Eloquent\UnsupportedPersistence;
 use Omnibridge\Schema\Builder;
 use Omnibridge\Schema\Database\SchemaCreator;
 use Omnibridge\Schema\Description;
@@ -172,7 +171,7 @@ final class EntityStoreTest extends TestCase
         $ghost->getEmail();
     }
 
-    public function testTheUnitOfWorkReadsAndRefusesToWrite(): void
+    public function testTheUnitOfWorkAnswersWhatItRead(): void
     {
         $unitOfWork = new EloquentUnitOfWork($this->store);
         $user = $this->store->find(User::class, $this->ids[User::class][1]);
@@ -183,15 +182,6 @@ final class EntityStoreTest extends TestCase
         self::assertSame(User::class, $unitOfWork->className($unitOfWork->reference(User::class, $this->ids[User::class][0])));
         $unitOfWork->refresh($user);
         self::assertSame('bob@example.org', $user->getEmail());
-        foreach (['persist' => fn () => $unitOfWork->persist($user), 'remove' => fn () => $unitOfWork->remove($user), 'flush' => fn () => $unitOfWork->flush(),
-            'transactional' => fn () => $unitOfWork->transactional(static fn () => null), 'changes' => fn () => $unitOfWork->changes($user), 'recompute' => fn () => $unitOfWork->recompute($user)] as $operation => $write) {
-            try {
-                $write();
-                self::fail($operation.' wrote');
-            } catch (UnsupportedPersistence $refused) {
-                self::assertStringContainsString($operation.'()', $refused->getMessage());
-            }
-        }
     }
 
     public function testAConditionScopesEveryQuery(): void

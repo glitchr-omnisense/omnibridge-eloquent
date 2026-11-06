@@ -11,12 +11,14 @@ use Omnibridge\Eloquent\Omnibase\EloquentEntities;
 use Omnibridge\Eloquent\Omnibase\EloquentPersistence;
 use Omnibridge\Eloquent\Omnibase\Repository\ThreadRepository;
 use Omnibridge\Eloquent\UnsupportedPersistence;
+use Omnibridge\Schema\Database\SchemaCreator;
+use Omnibridge\Schema\Description;
 use PHPUnit\Framework\TestCase;
 
 /**
  * The core's repository interfaces on Eloquent: each implemented (Aliases::INTERFACES, the core's entities described
  * with no Doctrine), a subclass's entity given its parent's repository, the methods declared #[BackendOnly('doctrine')]
- * refused aloud with UnsupportedQueryException, the writes with UnsupportedPersistence.
+ * refused aloud with UnsupportedQueryException; the writes through the unit of work.
  */
 final class RepositoriesTest extends TestCase
 {
@@ -83,9 +85,39 @@ final class RepositoriesTest extends TestCase
         }
     }
 
-    public function testTheWritesAreRefused(): void
+    /** The repositories' writes go through the unit of work (step F7c): ScopedWeeks::save()/forget(), WeekDays::save(). */
+    public function testTheHoursWritesGoThroughTheUnitOfWork(): void
     {
+        $store = self::$persistence->store();
+        $description = $store->mapping()->description;
+        $tables = [];
+        foreach ([\Base\Entity\Hours\ScopedWeek::class, \Base\Entity\Hours\WeekDayHours::class] as $class) {
+            $table = $description->entities[$class]->table;
+            $tables[$table] = $description->tables[$table];
+        }
+        (new SchemaCreator($store->connection()->getPdo()))->create(new Description([], $tables));
+
+        $weeks = self::$persistence->repositories()->implementing(\Base\Repository\Hours\ScopedWeeks::class);
+        $week = [1 => [['09:00', '12:00']], 3 => [['14:00', '18:00']]];
+        $saved = $weeks->save('office', $week);
+        self::assertNotNull($saved->getId());
+        $store->clear();
+        self::assertSame((new \Base\Entity\Hours\ScopedWeek('office', $week))->getWeek(), $weeks->week('office'));
+        $weeks->save('office', [2 => [['10:00', '11:00']]]);
+        $store->clear();
+        self::assertSame((new \Base\Entity\Hours\ScopedWeek('office', [2 => [['10:00', '11:00']]]))->getWeek(), $weeks->week('office'));
+        $weeks->forget('office');
+        $store->clear();
+        self::assertNull($weeks->ofScope('office'));
+
+        $days = self::$persistence->repositories()->implementing(\Base\Repository\Hours\WeekDays::class);
+        $days->save([1 => [['08:00', '17:00']], 7 => []]);
+        $store->clear();
+        self::assertCount(7, $days->findAll());
+        self::assertSame([['08:00', '17:00']], $days->week()[1]);
+
+        // A repository made without a unit of work refuses to write.
         $this->expectException(UnsupportedPersistence::class);
-        self::$persistence->repositories()->implementing(\Base\Repository\Hours\ScopedWeeks::class)->save('office', []);
+        (new EloquentEntities($store, \Base\Entity\Hours\ScopedWeek::class))->persist(new \Base\Entity\Hours\ScopedWeek('x', []));
     }
 }

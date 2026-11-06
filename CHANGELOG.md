@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Added: the writes (omnisense/omnibase's plan "omnibase agnostic", step F7c, first part: the unit of work)
+
+- `EloquentUnitOfWork` writes, as Doctrine's unit of work writes (docs/writing.md), and is omnisense/omnibridge's
+  `Snapshots`: `persist()` and `remove()` with the declared cascades, `flush()` in Doctrine's order - PreFlush, the
+  change sets (strict comparison with the store's snapshots; new entities reached persisted where the association
+  cascades, refused otherwise; owning many-to-many collections against their snapshot; orphans removed), OnFlush, then
+  in one transaction the inserts in commit order with the identifier the database gives read back (PostPersist after
+  all), the updates by class and identifier after PreUpdate (its `setNewValue()` written, the listeners' own changes
+  recomputed), the extra updates, the join rows, the deletes in reverse order (PostRemove after all); the snapshots
+  taken again, an application's collection becoming a `LazyCollection`; PostFlush. `transactional()`, `changes()`,
+  `recompute()`, `original()`; `listen()` and a PSR-14 dispatcher for the Lifecycle events; `scheduledInsertions()`,
+  `scheduledUpdates()`, `scheduledDeletions()`, `scheduleExtraUpdate()`, `cancelDeletion()` for OnFlush listeners. A
+  failed flush rolls back and closes the unit of work.
+- `Persister` (the statements: a joined class's tables, the discriminator, NULL plus an extra update for a target not
+  written yet, the join tables, the deletes as Doctrine leaves them to the database), `CommitOrder` (Doctrine's
+  topological sort), `Cascades` (cascade and orphanRemoval from the declarations, no ORM loaded; `extend()`),
+  `InvalidPersistence`. `UnsupportedPersistence` now names what is refused: another identifier generator, a composite
+  identifier or join column, a flush during a flush, a closed unit of work.
+- The store remembers what each entity held when read (`original()`, `originalCollections()`, `snapshot()`,
+  `setOriginal()`), tells its load listeners of each entity once the read is done, in Doctrine's order of postLoad
+  (`onLoad()`), and gives the unit of work `value()`, `setValue()`, `register()`, `forget()`. `LazyCollection` keeps a
+  snapshot (`snapshot()`, `takeSnapshot()`, `of()`); `IdentityMap::all()`.
+- omnibase's part: the repositories write through the unit of work (`persist()`, `remove()`, `flush()`;
+  `ScopedWeeks::save()`/`forget()`, `WeekDays::save()`), `OmnibaseCascades` reads `#[Cascade]` and `#[OrphanRemoval]`,
+  `EloquentPersistence` takes a `dispatcher` option.
+- Tests: `WriteParityTest` (Doctrine and Eloquent on two SQLite databases: the same rows, the same events), the hours'
+  writes in `Omnibase\RepositoriesTest`, `Omnibase\OmnibaseCascadesTest`; the fixtures gain cascades, setters and
+  `Setting` (an identifier the application gives).
+
 ### Added: the finder language and the core's repositories (omnisense/omnibase's plan "omnibase agnostic", step F7b, second part)
 
 - `Omnibase\Finder\EloquentFinder`: the core's finder `Query` (Base\Database\Repository\Finder\Parser) compiled onto

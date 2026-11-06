@@ -4,11 +4,13 @@ namespace Omnibridge\Eloquent\Omnibase;
 
 use Base\Database\Schema\EntitySchema;
 use Illuminate\Database\Connection;
+use Omnibridge\Eloquent\Cascades;
 use Omnibridge\Eloquent\Casts;
 use Omnibridge\Eloquent\EloquentUnitOfWork;
 use Omnibridge\Eloquent\EntityStore;
 use Omnibridge\Eloquent\Mapping;
 use Omnibridge\Schema\Description;
+use Psr\EventDispatcher\EventDispatcherInterface;
 
 /**
  * omnibase's entities on an Eloquent connection, in one call (plan "omnibase agnostic", step F7b): the
@@ -20,8 +22,10 @@ use Omnibridge\Schema\Description;
  *     $article = $persistence->repositories()->oneById(Article::class, 12);
  *
  * Options: EntitySchema's (project_dir, enumerations, types, resolve_target_entities, rules, column_types),
- * `directories` (more entity folders, a bundle's) and `repositories` (an application's repositories on the store, by
- * entity: EloquentRepositories::register()).
+ * `directories` (more entity folders, a bundle's), `repositories` (an application's repositories on the store, by
+ * entity: EloquentRepositories::register()) and `dispatcher` (the host's PSR-14 dispatcher, given the unit of work's
+ * Lifecycle events). The associations cascade as their mapping and omnibase's #[Cascade] and #[OrphanRemoval] say
+ * (OmnibaseCascades).
  */
 final class EloquentPersistence
 {
@@ -40,9 +44,15 @@ final class EloquentPersistence
         $options['project_dir'] = $projectDir;
         $description ??= EntitySchema::describe(EntitySchema::directories($projectDir, $options['directories'] ?? []), $options);
         $store = new EntityStore($connection, new Mapping($description), $casts ?? OmnibaseCasts::create($options));
-        $unitOfWork = new EloquentUnitOfWork($store);
+        $dispatcher = $options['dispatcher'] ?? null;
+        if (null !== $dispatcher && !$dispatcher instanceof EventDispatcherInterface) {
+            throw new \InvalidArgumentException(sprintf('The option "dispatcher" is a %s, no PSR-14 event dispatcher.', get_debug_type($dispatcher)));
+        }
+        $cascades = new Cascades();
+        $cascades->extend(OmnibaseCascades::resolver());
+        $unitOfWork = new EloquentUnitOfWork($store, $dispatcher, $cascades);
 
-        return new self($store, $unitOfWork, new EloquentBackend($unitOfWork), new EloquentRepositories($store, $options['repositories'] ?? []));
+        return new self($store, $unitOfWork, new EloquentBackend($unitOfWork), new EloquentRepositories($store, $options['repositories'] ?? [], $unitOfWork));
     }
 
     public function store(): EntityStore

@@ -5,11 +5,10 @@ namespace Omnibridge\Eloquent\Omnibase\Repository\Hours;
 use Base\Entity\Hours\ScopedWeek;
 use Base\Repository\Hours\ScopedWeeks;
 use Omnibridge\Eloquent\Omnibase\EloquentEntities;
-use Omnibridge\Eloquent\UnsupportedPersistence;
 
 /**
  * omnibridge/doctrine's Hours\ScopedWeekRepository on Eloquent (plan "omnibase agnostic", step F7b): the same finders, compiled by
- * EloquentFinder.
+ * EloquentFinder, the writes through the unit of work (step F7c).
  *
  * @extends EloquentEntities<ScopedWeek>
  */
@@ -25,15 +24,21 @@ class ScopedWeekRepository extends EloquentEntities implements ScopedWeeks
         return $this->ofScope($scope)?->getWeek();
     }
 
-    /** Writes: refused until step F7c. */
     public function save(string $scope, array $week): ScopedWeek
     {
-        throw UnsupportedPersistence::writes('save');
+        $row = $this->ofScope($scope);
+        $row ? $row->setWeek($week) : $row = new ScopedWeek($scope, $week);
+        $this->unitOfWork()->persist($row);
+        $this->unitOfWork()->flush();
+
+        return $row;
     }
 
-    /** Writes: refused until step F7c. */
     public function forget(string $scope): void
     {
-        throw UnsupportedPersistence::writes('forget');
+        if ($row = $this->ofScope($scope)) {
+            $this->unitOfWork()->remove($row);
+            $this->unitOfWork()->flush();
+        }
     }
 }

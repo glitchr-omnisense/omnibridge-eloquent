@@ -25,7 +25,7 @@ class User
     #[ORM\Column(type: 'bigint', nullable: true)]
     private int|string|null $visits = null;
 
-    #[ORM\OneToOne(targetEntity: Profile::class, mappedBy: 'user')]
+    #[ORM\OneToOne(targetEntity: Profile::class, mappedBy: 'user', cascade: ['persist'])]
     private ?Profile $profile = null;
 
     /** @var Collection<int, Thread> */
@@ -45,6 +45,8 @@ class User
     public function setBalance(?string $balance): static { $this->balance = $balance; return $this; }
     public function setVisits(int|string|null $visits): static { $this->visits = $visits; return $this; }
     public function getProfile(): ?Profile { return $this->profile; }
+    public function setProfile(?Profile $profile): static { $this->profile = $profile; return $this; }
+    public function setEmail(string $email): static { $this->email = $email; return $this; }
     /** @return Collection<int, Thread> */
     public function getThreads(): Collection { return $this->threads; }
 }

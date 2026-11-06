@@ -61,6 +61,23 @@ final class IdentityMap
         unset($this->entities[$root][$key], $this->keys[$entity]);
     }
 
+    /**
+     * Every entity kept, by root class in the order the classes were first met, then in the order kept.
+     *
+     * @return list<object>
+     */
+    public function all(): array
+    {
+        $all = [];
+        foreach ($this->entities as $entities) {
+            foreach ($entities as $entity) {
+                $all[] = $entity;
+            }
+        }
+
+        return $all;
+    }
+
     public function count(): int
     {
         return array_sum(array_map('count', $this->entities));

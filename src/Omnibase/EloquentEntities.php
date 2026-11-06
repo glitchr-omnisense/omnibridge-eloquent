@@ -3,6 +3,7 @@
 namespace Omnibridge\Eloquent\Omnibase;
 
 use Base\Database\Repository\Entities;
+use Omnibridge\Eloquent\EloquentUnitOfWork;
 use Omnibridge\Eloquent\EntityMap;
 use Omnibridge\Eloquent\EntityStore;
 use Omnibridge\Eloquent\Omnibase\Finder\EloquentFinder;
@@ -18,7 +19,9 @@ use Omnibridge\Eloquent\UnsupportedPersistence;
  * RAND()). A finder that hands back Doctrine's Query hands back a FinderQuery (getResult(), getOneOrNullResult()).
  *
  * The base of the core's repositories on Eloquent (Repository\*) and the repository of any other class.
- * persist(), remove() and flush() write: refused (UnsupportedPersistence) until step F7c.
+ * persist(), remove() and flush() write through the unit of work (step F7c), as ServiceEntityRepository writes
+ * through the entity manager: an entity of another class refused; a repository made without a unit of work
+ * refuses to write (UnsupportedPersistence).
  *
  * @template T of object
  *
@@ -34,7 +37,14 @@ class EloquentEntities implements Entities
     public function __construct(
         protected readonly EntityStore $store,
         protected readonly string $class,
+        protected readonly ?EloquentUnitOfWork $unitOfWork = null,
     ) {
+    }
+
+    /** The unit of work the repository writes through (refused when it was made without one). */
+    public function unitOfWork(): EloquentUnitOfWork
+    {
+        return $this->unitOfWork ?? throw UnsupportedPersistence::operation('write through '.static::class, 'it was made without a unit of work (EloquentRepositories over an EloquentUnitOfWork)');
     }
 
     /** The class the repository reads (its rows: of it and its subclasses). */
@@ -109,16 +119,36 @@ class EloquentEntities implements Entities
 
     public function persist($entity, bool $flush = false): void
     {
-        throw UnsupportedPersistence::writes('persist');
+        $this->unitOfWork()->persist($this->ofClass($entity));
+        if ($flush) {
+            $this->unitOfWork()->flush();
+        }
     }
 
     public function remove($entity, bool $flush = false): void
     {
-        throw UnsupportedPersistence::writes('remove');
+        $this->unitOfWork()->remove($this->ofClass($entity));
+        if ($flush) {
+            $this->unitOfWork()->flush();
+        }
     }
 
     public function flush(bool $autoclear = false)
     {
-        throw UnsupportedPersistence::writes('flush');
+        $this->unitOfWork()->flush();
+        if ($autoclear) {
+            $this->store->clear();
+        }
+    }
+
+    /** The entity, if it is of the repository's class (ServiceEntityRepository's message otherwise). */
+    private function ofClass(mixed $entity): object
+    {
+        $class = $this->getClassName();
+        if (!\is_object($entity) || !$entity instanceof $class) {
+            throw new \InvalidArgumentException(\sprintf('Repository "%s" is expected "%s" entity, you passed "%s"', static::class, $class, \is_object($entity) ? $entity::class : 'null'));
+        }
+
+        return $entity;
     }
 }

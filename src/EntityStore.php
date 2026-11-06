@@ -28,7 +28,14 @@ use Omnibridge\Schema\Relation;
  *   - a to-many association: a LazyCollection (doctrine/collections'
  *     Collection) read on first use, ordered and indexed as declared.
  *
- * Reads only: writing is the unit of work's, at step F7c (UnsupportedPersistence).
+ * - What each entity held when it was read (original()): its fields and to-one associations, and its to-many
+ *   collections, which the unit of work compares with what it holds at a flush (Doctrine's original entity data);
+ *   taken again after a flush wrote it (snapshot()).
+ * - The listeners of a read (onLoad()): told of each entity read once the whole read is done, as Doctrine defers
+ *   its postLoad to the end of a hydration - the unit of work's PostLoad.
+ *
+ * Writing is the unit of work's (EloquentUnitOfWork, Persister): the store gives it the entities' values
+ * (value(), setValue()) and keeps its identity map in step (register(), forget()).
  */
 final class EntityStore
 {
@@ -43,12 +50,28 @@ final class EntityStore
 
     private int $queries = 0;
 
+    /** @var \WeakMap<object, array<string, mixed>> entity => property => value as read or last flushed (fields, to-one) */
+    private \WeakMap $originals;
+
+    /** @var \WeakMap<object, array<string, mixed>> entity => property => the to-many collection as read or last flushed */
+    private \WeakMap $collections;
+
+    /** @var list<\Closure(object, EntityMap): void> */
+    private array $loadListeners = [];
+
+    /** @var list<array{0: object, 1: EntityMap}> entities read by the running read, told to the listeners at its end */
+    private array $loaded = [];
+
+    private int $reading = 0;
+
     public function __construct(
         private readonly Connection $connection,
         private readonly Mapping $mapping,
         private readonly Casts $casts,
         private readonly IdentityMap $identityMap = new IdentityMap(),
     ) {
+        $this->originals = new \WeakMap();
+        $this->collections = new \WeakMap();
     }
 
     public function connection(): Connection
@@ -104,6 +127,93 @@ final class EntityStore
     public function clear(): void
     {
         $this->identityMap->clear();
+        $this->originals = new \WeakMap();
+        $this->collections = new \WeakMap();
+    }
+
+    /**
+     * A listener told of each entity read (from a row, into a ghost, by a refresh), once the read that made it is
+     * done: all its fields and associations set, the other entities of the same read too.
+     *
+     * @param \Closure(object, EntityMap): void $listener
+     */
+    public function onLoad(\Closure $listener): void
+    {
+        $this->loadListeners[] = $listener;
+    }
+
+    /**
+     * The entity's values as read or last flushed, by property: its fields and its to-one associations; [] for an
+     * entity the store did not read nor was told was written.
+     *
+     * @return array<string, mixed>
+     */
+    public function original(object $entity): array
+    {
+        return $this->originals[$entity] ?? [];
+    }
+
+    /**
+     * Whether the store holds what the entity was (it read it, or the unit of work wrote it).
+     */
+    public function hasOriginal(object $entity): bool
+    {
+        return isset($this->originals[$entity]);
+    }
+
+    /**
+     * The to-many collections of the entity as read or last flushed (the collection objects).
+     *
+     * @return array<string, mixed>
+     */
+    public function originalCollections(object $entity): array
+    {
+        return $this->collections[$entity] ?? [];
+    }
+
+    /** What the entity holds now becomes what it was: after a flush wrote it. */
+    public function snapshot(object $entity): void
+    {
+        $this->capture($this->mapping->of($entity::class), $entity);
+    }
+
+    /** Overwrites the remembered value of one property (Doctrine's setOriginalEntityProperty()). */
+    public function setOriginal(object $entity, string $property, mixed $value): void
+    {
+        $original = $this->originals[$entity] ?? [];
+        $original[$property] = $value;
+        $this->originals[$entity] = $original;
+    }
+
+    /** The value a field or an association of the entity holds (null when its property was never set). */
+    public function value(object $entity, string $property): mixed
+    {
+        $map = $this->mapping->of($entity::class);
+        $declared = $map->entity->fields[$property] ?? $map->entity->relations[$property] ?? throw new \OutOfBoundsException(\sprintf('%s has no field nor association "%s".', $entity::class, $property));
+        $reflection = $this->property($declared->declaredIn ?? $map->className(), $property);
+
+        return $reflection->isInitialized($entity) ? $reflection->getValue($entity) : null;
+    }
+
+    /** Writes a field or an association of the entity, as Doctrine writes it (no setter). */
+    public function setValue(object $entity, string $property, mixed $value): void
+    {
+        $map = $this->mapping->of($entity::class);
+        $declared = $map->entity->fields[$property] ?? $map->entity->relations[$property] ?? throw new \OutOfBoundsException(\sprintf('%s has no field nor association "%s".', $entity::class, $property));
+        $this->property($declared->declaredIn ?? $map->className(), $property)->setValue($entity, $value);
+    }
+
+    /** The entity kept in the identity map under that identifier (a new entity once its row is written). */
+    public function register(object $entity, mixed $id): void
+    {
+        $this->identityMap->add($this->mapping->of($entity::class)->root, $id, $entity);
+    }
+
+    /** The entity out of the identity map and its remembered values forgotten (its row deleted). */
+    public function forget(object $entity): void
+    {
+        $this->identityMap->remove($entity);
+        unset($this->originals[$entity], $this->collections[$entity]);
     }
 
     /**
@@ -252,12 +362,14 @@ final class EntityStore
      */
     public function results(EntityMap $map, Builder $query): array
     {
-        $results = [];
-        foreach ($this->read($map, $query) as [$row, $record]) {
-            $results[] = [$this->entity($this->mapping->of($map->classOf($row)), $row), $record];
-        }
+        return $this->reading(function () use ($map, $query): array {
+            $results = [];
+            foreach ($this->read($map, $query) as [$row, $record]) {
+                $results[] = [$this->entity($this->mapping->of($map->classOf($row)), $row), $record];
+            }
 
-        return $results;
+            return $results;
+        });
     }
 
     /**
@@ -320,12 +432,14 @@ final class EntityStore
      */
     public function hydrate(EntityMap $map, array $rows): array
     {
-        $entities = [];
-        foreach ($rows as $row) {
-            $entities[] = $this->entity($this->mapping->of($map->classOf($row)), $row);
-        }
+        return $this->reading(function () use ($map, $rows): array {
+            $entities = [];
+            foreach ($rows as $row) {
+                $entities[] = $this->entity($this->mapping->of($map->classOf($row)), $row);
+            }
 
-        return $entities;
+            return $entities;
+        });
     }
 
     /** The entity read again from its row, its unsaved changes lost; false when its row is gone. */
@@ -338,7 +452,7 @@ final class EntityStore
         if ([] === $rows) {
             return false;
         }
-        $this->fill($map, $entity, $rows[0], $id);
+        $this->reading(fn () => $this->fill($map, $entity, $rows[0], $id));
 
         return true;
     }
@@ -363,6 +477,11 @@ final class EntityStore
     }
 
     private function load(EntityMap $map, mixed $id, ?object $into = null): ?object
+    {
+        return $this->reading(fn (): ?object => $this->loadRow($map, $id, $into));
+    }
+
+    private function loadRow(EntityMap $map, mixed $id, ?object $into = null): ?object
     {
         $rows = $this->rows($map, $this->query($map)->where(fn (Builder $query) => $this->whereId($map, $query, $id)));
         if ([] === $rows) {
@@ -417,9 +536,91 @@ final class EntityStore
             }
             $this->property($field->declaredIn ?? $class, $property)->setRawValueWithoutLazyInitialization($entity, $value);
         }
+        $inverse = [];
         foreach ($map->entity->relations as $property => $relation) {
+            if ($relation->isToOne() && !$relation->owning) {
+                $inverse[$property] = $relation;
+                continue;
+            }
             $this->property($relation->declaredIn ?? $class, $property)->setRawValueWithoutLazyInitialization($entity, $this->association($map, $relation, $row, $id));
         }
+        // Told to the load listeners in Doctrine's order of postLoad: after the to-one entities its row made it read at
+        // once (a target with subclasses), before the inverse one-to-one entities read for it.
+        $this->loaded[] = [$entity, $map];
+        foreach ($inverse as $property => $relation) {
+            $this->property($relation->declaredIn ?? $class, $property)->setRawValueWithoutLazyInitialization($entity, $this->association($map, $relation, $row, $id));
+        }
+        $this->capture($map, $entity);
+    }
+
+    /** What the entity holds now, remembered: its fields and to-one associations, its to-many collections. */
+    private function capture(EntityMap $map, object $entity): void
+    {
+        $class = $map->className();
+        $original = [];
+        $collections = [];
+        foreach ($map->entity->fields as $property => $field) {
+            $reflection = $this->property($field->declaredIn ?? $class, $property);
+            $original[$property] = $reflection->isInitialized($entity) ? $reflection->getRawValue($entity) : null;
+        }
+        foreach ($map->entity->relations as $property => $relation) {
+            $reflection = $this->property($relation->declaredIn ?? $class, $property);
+            $value = $reflection->isInitialized($entity) ? $reflection->getRawValue($entity) : null;
+            if ($relation->isToOne()) {
+                $original[$property] = $value;
+            } else {
+                $collections[$property] = $value;
+            }
+        }
+        $this->originals[$entity] = $original;
+        $this->collections[$entity] = $collections;
+    }
+
+    /**
+     * A read: the entities it makes are told to the load listeners once the outermost read is done (a read inside
+     * another - an association read at once, a ghost - waits for it), in the order they were read.
+     *
+     * @template R
+     *
+     * @param \Closure(): R $read
+     *
+     * @return R
+     */
+    private function reading(\Closure $read): mixed
+    {
+        ++$this->reading;
+        try {
+            $result = $read();
+        } catch (\Throwable $failure) {
+            if (0 === --$this->reading) {
+                $this->loaded = [];
+            }
+
+            throw $failure;
+        }
+        if (0 !== --$this->reading) {
+            return $result;
+        }
+        while ([] !== $this->loaded) {
+            $loaded = $this->loaded;
+            $this->loaded = [];
+            if ([] === $this->loadListeners) {
+                break;
+            }
+            ++$this->reading;
+            try {
+                foreach ($loaded as [$entity, $map]) {
+                    foreach ($this->loadListeners as $listener) {
+                        $listener($entity, $map);
+                    }
+                }
+            } finally {
+                --$this->reading;
+            }
+        }
+        $this->loaded = [];
+
+        return $result;
     }
 
     /** @param array<string, array<string, mixed>> $row */

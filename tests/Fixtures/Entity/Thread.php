@@ -37,7 +37,7 @@ class Thread
     protected Collection $tags;
 
     /** @var Collection<string, Translation> */
-    #[ORM\OneToMany(targetEntity: Translation::class, mappedBy: 'thread', indexBy: 'locale')]
+    #[ORM\OneToMany(targetEntity: Translation::class, mappedBy: 'thread', indexBy: 'locale', cascade: ['persist', 'remove'], orphanRemoval: true)]
     protected Collection $translations;
 
     public function __construct(string $title = '')
@@ -50,6 +50,7 @@ class Thread
 
     public function getId(): ?int { return $this->id; }
     public function getTitle(): string { return $this->title; }
+    public function setTitle(string $title): static { $this->title = $title; return $this; }
     public function setParent(?Thread $parent): static { $this->parent = $parent; return $this; }
     public function getParent(): ?Thread { return $this->parent; }
     public function setAuthor(?User $author): static { $this->author = $author; return $this; }
@@ -60,6 +61,11 @@ class Thread
     /** @return Collection<int, Tag> */
     public function getTags(): Collection { return $this->tags; }
     public function addTag(Tag $tag): static { $this->tags->add($tag); return $this; }
+    public function removeTag(Tag $tag): static { $this->tags->removeElement($tag); return $this; }
+    /** @param Collection<int, Tag> $tags */
+    public function setTags(Collection $tags): static { $this->tags = $tags; return $this; }
     /** @return Collection<string, Translation> */
     public function getTranslations(): Collection { return $this->translations; }
+    public function addTranslation(Translation $translation): static { $this->translations->set($translation->getLocale(), $translation); return $this; }
+    public function removeTranslation(string $locale): static { $this->translations->remove($locale); return $this; }
 }

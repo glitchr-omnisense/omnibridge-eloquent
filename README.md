@@ -6,8 +6,9 @@ describes into **the same plain PHP entities Doctrine maps**. A data mapper (omn
 "omnibase agnostic", answer 1): the entities are never turned into Eloquent models, nothing in them
 knows which backend read them, and an application may keep its own Eloquent models beside them.
 
-Step F7b of that plan, **the reads**. Writing (the unit of work's persist, remove, flush,
-transactions, change sets) is step F7c: until then it is refused aloud (`UnsupportedPersistence`).
+Steps F7b (**the reads**) and F7c (**the writes**) of that plan: the unit of work persists, removes and
+flushes as Doctrine's does - the same rows, the same lifecycle events in the same order - and refuses aloud
+what it does not do (`UnsupportedPersistence`).
 
 ```sh
 composer require omnibridge/eloquent
@@ -40,9 +41,13 @@ composer require omnibridge/eloquent
   them; JSON; simple_array; bigint...), an application's own types given with `with()` or read from its
   `ColumnTypes` (an alias followed, an enumeration's value, a set's values). A type nothing knows is
   refused.
-- `EloquentUnitOfWork`: omnisense/omnibridge's `UnitOfWork`, reading only - contains, reference, isNew,
-  identifier, className, refresh; persist, remove, flush, transactional, changes and recompute refused
-  (`UnsupportedPersistence`, step F7c).
+- `EloquentUnitOfWork`: omnisense/omnibridge's `UnitOfWork` and `Snapshots`, writing as Doctrine's unit of
+  work writes (step F7c, [docs/writing.md](docs/writing.md)): persist and remove with the declared cascades
+  (`Cascades`), flush in Doctrine's order - change sets against the store's snapshots, orphan removal, inserts
+  in commit order (`CommitOrder`; a nullable foreign key in a cycle by an extra update), the identifier the
+  database gives read back, updates after `PreUpdate` (its `setNewValue()`), join rows, deletes in reverse
+  order (`Persister`) -, the Lifecycle events to listeners and a PSR-14 dispatcher (`PostLoad` from the
+  store), transactional, changes, recompute. Refused aloud: `UnsupportedPersistence`, `InvalidPersistence`.
 
 ```php
 use Omnibridge\Eloquent\{Casts, Connections, EntityStore, Mapping};
@@ -83,13 +88,18 @@ docker compose -f compose.yml -f compose.checkouts.yml run --rm test  # the fami
 `EntityStoreTest`: fixture entities (a joined and a single-table hierarchy, every kind of association, the
 portable types) on SQLite in memory, their tables created from the description with no ORM and their rows
 written by Doctrine: each entity read by id is the one Doctrine reads, once normalised (`Support\Normaliser`);
-ghosts and collections read nothing until used; one object per row; scopes; writes refused. `ConnectionsTest`
+ghosts and collections read nothing until used; one object per row; scopes. `WriteParityTest`: the same writes
+on Doctrine and on the unit of work, two SQLite databases, the same rows (every column, the generated identifiers
+included) and the same lifecycle events in the same order - a graph inserted in commit order, updates and join
+rows, deletes cascaded, orphans, a nullable cycle, a listener's new value and OnFlush insertion, refusals, a
+rolled-back transaction, the states. `ConnectionsTest`
 (URL, Capsule, PDO, a Laravel database manager) and `Omnibase\OmnibasePartTest` (omnibase's column types, the core's
 repositories on the store, the backend's scopes; the core needed: `compose.checkouts.yml` until the core's 5.x with
 `EntitySchema` is served).
 
-`Omnibase\FinderTest` (the finder language on the fixtures) and `Omnibase\RepositoriesTest` (the core's 28 interfaces
-implemented, the 14 backend-only methods refused).
+`Omnibase\FinderTest` (the finder language on the fixtures), `Omnibase\RepositoriesTest` (the core's 28 interfaces
+implemented, the 14 backend-only methods refused, the hours' writes through the unit of work) and
+`Omnibase\OmnibaseCascadesTest` (omnibase's #[Cascade] and #[OrphanRemoval]).
 
 `Harness\FinderParityTest` (in omnisense/omnibase's harness, SQLite) and `Site\FinderParityTest` (in an application,
 MySQL) run every finder call on both compilers, the same database, and compare the rows - see

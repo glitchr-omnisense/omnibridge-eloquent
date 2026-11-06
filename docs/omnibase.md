@@ -34,4 +34,7 @@ $user = $users->findOneBy(['email' => 'someone@example.org']);
   `findBy()`'s criteria array as omnibridge/doctrine's `ServiceEntityRepository` reads them - see [the finder
   language](finder.md). The 14 `#[BackendOnly('doctrine')]` methods are refused with `UnsupportedQueryException`.
 
-**Writes**: step F7c (`UnsupportedPersistence` until then).
+**Writes** ([Writing entities](writing.md)): through the unit of work, the repositories' `persist()`, `remove()` and
+`flush()` as `ServiceEntityRepository`'s, `ScopedWeeks::save()`/`forget()` and `WeekDays::save()` as omnibridge/doctrine's.
+The cascades include omnibase's `#[Cascade]` and `#[OrphanRemoval]` (`OmnibaseCascades`); `EloquentPersistence`'s option
+`dispatcher` (PSR-14) receives the Lifecycle events.

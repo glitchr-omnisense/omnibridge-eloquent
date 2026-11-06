@@ -63,5 +63,7 @@ A type nothing knows is refused (`DomainException`), never read as a raw string.
 ## The unit of work
 
 `EloquentUnitOfWork` answers omnisense/omnibridge's `UnitOfWork` for what reads: `contains()`, `reference()`, `isNew()`,
-`identifier()`, `className()` (a ghost is of its own class), `refresh()`. `persist()`, `remove()`, `flush()`,
-`transactional()`, `changes()` and `recompute()` throw `UnsupportedPersistence` until step F7c.
+`identifier()`, `className()` (a ghost is of its own class), `refresh()`; and writes ([Writing entities](writing.md)).
+The store remembers what each entity held when it was read (`original()`, `originalCollections()`: what a flush
+compares with) and tells its load listeners of each entity read, once the read is done (`onLoad()`: the unit of
+work's `PostLoad`).
