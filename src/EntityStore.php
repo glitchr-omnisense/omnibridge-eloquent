@@ -642,7 +642,7 @@ final class EntityStore
             return $this->select($relation->target, fn (Builder $query) => $query->where($target->column((string) $relation->mappedBy), '=', $this->ownerKey($map, $id)))[0] ?? null;
         }
 
-        return new LazyCollection(fn (): array => $this->collection($map, $relation, $target, $id));
+        return new LazyCollection(fn (): array => $this->collection($map, $relation, $target, $id), Relation::MANY_TO_MANY === $relation->kind && $relation->owning);
     }
 
     /** @return array<array-key, object> */

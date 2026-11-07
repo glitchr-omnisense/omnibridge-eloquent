@@ -53,7 +53,7 @@ final class ByIdParityTest extends KernelTestCase
             foreach ($scopes as $scope) {
                 $doctrine->enableScope($scope);
             }
-            $eloquent = EloquentPersistence::create(Connections::pdo($connection->getNativeConnection(), (string) $connection->getDatabase()), ['project_dir' => $projectDir]);
+            $eloquent = EloquentPersistence::create(Connections::pdo($connection->getNativeConnection(), (string) $connection->getDatabase()), ['project_dir' => $projectDir, 'lifecycle' => self::lifecycle()]);
             foreach ($scopes as $scope) {
                 $eloquent->backend()->enableScope($scope);
             }
@@ -86,7 +86,9 @@ final class ByIdParityTest extends KernelTestCase
                         $a = null === $left ? null : $normaliser->entity($left);
                         $b = null === $right ? null : $normaliser->entity($right);
                         [$differences, $postLoad] = self::split(self::difference($a, $b));
-                        if ([] === $differences) {
+                        // Since step F7c the store runs the behaviours' PostLoad (the relay): a difference only
+                        // a postLoad hook makes is a difference.
+                        if ([] === $differences && [] === $postLoad) {
                             ++$entry['equal'];
                         } else {
                             $entry['differences'][(string) $id] = $differences;
@@ -118,6 +120,9 @@ final class ByIdParityTest extends KernelTestCase
         foreach ($report['passes'] as $pass => $result) {
             self::assertSame([], $result['unequal'], $pass.': '.json_encode(array_intersect_key($result['by class'], array_flip($result['unequal'])), \JSON_UNESCAPED_SLASHES | \JSON_PARTIAL_OUTPUT_ON_ERROR));
             self::assertGreaterThan(0, $result['compared']);
+            // User::$rolesPositions, which #[OrderColumn]'s PostLoad writes back on both sides since step F7c.
+            $users = array_sum(array_map(static fn (array $entry): int => $entry['compared'] ?? 0, array_filter($result['by class'], static fn (string $class): bool => is_a($class, 'Base\\Entity\\User', true), \ARRAY_FILTER_USE_KEY)));
+            self::assertGreaterThan(0, $users, $pass.': users compared, their rolesPositions with them');
         }
     }
 
@@ -145,7 +150,7 @@ final class ByIdParityTest extends KernelTestCase
         foreach (['trash', 'vault'] as $scope) {
             $doctrine->disableScope($scope);
         }
-        $eloquent = EloquentPersistence::create(Connections::pdo($pdo, (string) $connection->getDatabase()), ['project_dir' => $projectDir]);
+        $eloquent = EloquentPersistence::create(Connections::pdo($pdo, (string) $connection->getDatabase()), ['project_dir' => $projectDir, 'lifecycle' => self::lifecycle()]);
         $store = $eloquent->store();
         $description = $store->mapping()->description;
         $types = \Base\Database\Schema\EntitySchema::columnTypes(['project_dir' => $projectDir]);
@@ -271,7 +276,7 @@ final class ByIdParityTest extends KernelTestCase
                     $right = $store->find($class, $ids[$class]);
                     $b = null === $right ? null : $normaliser->entity($right);
                     [$differences, $postLoad] = null === $a ? [['doctrine' => 'not found', 'eloquent' => null === $b ? 'not found' : 'found'], []] : self::split(self::difference($a, $b));
-                    $entry['equal'] = [] === $differences;
+                    $entry['equal'] = [] === $differences && [] === $postLoad;
                     if (!$entry['equal']) {
                         $entry['differences'] = $differences;
                     }
@@ -383,9 +388,20 @@ final class ByIdParityTest extends KernelTestCase
     }
 
     /**
-     * The differences, and apart those a behaviour's postLoad hook makes on Doctrine's side only - omnibase's
-     * #[OrderColumn] writes its positions back as JSON text after Doctrine decoded them: the same value, which the
-     * store gives decoded, since it runs no lifecycle hook before step F7c.
+     * The behaviours' PostLoad on the store (step F7c): the relay, and IntlListener (an empty translation read is an
+     * orphan), as a host attaches them - #[OrderColumn] writes User::$rolesPositions back after its read on both sides.
+     *
+     * @return array<string, mixed>
+     */
+    private static function lifecycle(): array
+    {
+        return ['attribute_reader' => \Base\Attributes\AttributeReader::getInstance(false)];
+    }
+
+    /**
+     * The differences, and apart those a behaviour's postLoad hook would make on one side only - omnibase's
+     * #[OrderColumn] writes its positions back as JSON text after Doctrine decoded them. Before step F7c the store ran
+     * no lifecycle hook and these were reported apart; since, they count (the store's PostLoad runs the relay).
      *
      * @return array{0: array<string, mixed>, 1: array<string, mixed>}
      */

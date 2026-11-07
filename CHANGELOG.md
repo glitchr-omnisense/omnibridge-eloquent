@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### Added: omnibase's behaviours on the unit of work (omnisense/omnibase's plan "omnibase agnostic", step F7c, second part)
+
+- `Omnibase\AttributeRelay`: omnibridge/doctrine's AttributeSubscriber on the unit of work's Lifecycle events, its
+  buffers kept as they are (PreFlush and OnFlush append without emptying, PostFlush walks candidates and buffers); an
+  attribute overriding a Doctrine-typed hook of the moment refused aloud. See docs/behaviours.md.
+- `Omnibase\EloquentBehaviours` registers with omnibase's Backends, for `EloquentUnitOfWork`, a part wherever Doctrine
+  has one: `Omnibase\Behaviour\Eloquent{Vault,Slugify,Cache,OrderColumn}Backend`, `EloquentRowLocks`,
+  `EloquentConditionalUpdates`, `EloquentEntityCache` (disabled), `EloquentBulkDeletes` (+ `deleteIds()`),
+  `EloquentColumnTypes`; the entities' shapes (the store's description), the backend and the repositories (the
+  persistence's: `EloquentPersistence` registers and remembers itself).
+- `Omnibase\Lifecycle\`: `TrasheableListener`, `VersionableListener`, `IntlListener`, `ThreadListener` (with
+  `StoreMentionees`), `SettingListener`, `TextOverrideListener`, `EntityDispatcherListener` (doctrine/persistence's
+  `LifecycleEventArgs` over `EloquentObjectManager`, `PreUpdateArgs`), `PreFlushListener`, `DemoAccountLockListener`,
+  and `OmnibaseListeners::attach()`, which attaches the relay and them in Doctrine's order;
+  `EloquentPersistence::create()`'s `lifecycle` option, `lifecycle()`. Not adapted, with the reason, or refused aloud:
+  docs/behaviours.md.
+- `EloquentUnitOfWork`: `scheduleForUpdate()`, `scheduleForDelete()`, `propertyChanged()`, `setOriginal()`,
+  `scheduledCollectionUpdates()`, `scheduleOrphanRemoval()`, `cancelOrphanRemoval()`, `recomputeWithAssociations()`,
+  `detach()`, `isUninitializedObject()`; a flush with only a changed collection is not skipped (Doctrine's
+  collectionUpdates); a dirty owning many-to-many updates its owner with an empty change set.
+- `LazyCollection`: `isDirty()` as PersistentCollection's, an element added before the read kept and put after the
+  elements read, an owning side's `clear()` taking its snapshot (`wasCleared()`: the owner's rows all go), `wrap()`.
+- `OmnibaseCascades`: a translatable's `translations` (persist, refresh, remove, orphan removal) and a translation's
+  `translatable` (persist, refresh), which IntlSubscriber maps on Doctrine.
+- `Omnibase\Repository\User\PasskeyRepository` is omnibase's `PasskeyRecords` (webauthn's credential repository:
+  `findOneByCredentialId()`, `findAllForUserEntity()`, `saveCredentialRecord()` through the unit of work).
+- Tests: `Omnibase\LifecycleTest`; `Harness\WriteParityTest` (the behaviours' rows on both backends in the core's
+  harness: 8 scenarios equal); `Site\WriteParityTest` (lesringostars' Article: Countify); `Site\ByIdParityTest` with the
+  relay attached (rolesPositions compared, no "postLoad only" left); `Support\OmnibaseHarness`.
+  `composer.json` suggests doctrine/persistence and web-auth/webauthn-lib.
+
 ### Added: the writes (omnisense/omnibase's plan "omnibase agnostic", step F7c, first part: the unit of work)
 
 - `EloquentUnitOfWork` writes, as Doctrine's unit of work writes (docs/writing.md), and is omnisense/omnibridge's

@@ -32,11 +32,13 @@ final class FinderParity
     public const UNEQUAL = 'unequal';
 
     /** Eloquent on Doctrine's connection, with the scopes Doctrine has enabled (trash_filter, vault_filter and its environment). */
-    public static function persistence(EntityManagerInterface $entityManager, string $projectDir): EloquentPersistence
+    /** @param array<string, mixed> $more more of EloquentPersistence's options (its lifecycle: OmnibaseHarness) */
+    public static function persistence(EntityManagerInterface $entityManager, string $projectDir, array $more = []): EloquentPersistence
     {
         $options = class_exists(\Omnibridge\Symfony\Omnibase\Console\InstalledEntities::class)
             ? \Omnibridge\Symfony\Omnibase\Console\InstalledEntities::options($entityManager, $projectDir)
             : ['project_dir' => $projectDir, 'paths' => EntitySchema::directories($projectDir)];
+        $options = $more + $options;
         $description = EntitySchema::describe($options['paths'], $options);
         $connection = $entityManager->getConnection();
         $persistence = EloquentPersistence::create(Connections::pdo($connection->getNativeConnection(), (string) $connection->getDatabase()), $options, $description);

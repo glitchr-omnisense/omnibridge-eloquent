@@ -73,6 +73,9 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
     /** @var array<int, object> */
     private array $orphans = [];
 
+    /** @var array<string, array{0: object, 1: string, 2: mixed}> owner#property => the owner, the property, the collection: the to-many collections this flush finds changed */
+    private array $collectionUpdates = [];
+
     /** @var array<int, array{0: string, 1: string, 2: object}> new entities met through an association that does not cascade */
     private array $notCascaded = [];
 
@@ -299,6 +302,124 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
     }
 
     /**
+     * The entity updated by this flush whatever its change set says (Doctrine's scheduleForUpdate()): its PreUpdate
+     * and PostUpdate dispatched, its row written when a listener changed it - what #[Vault] asks at PreFlush for a
+     * secured field given its plain value again. A managed entity only.
+     */
+    public function scheduleForUpdate(object $entity): void
+    {
+        $oid = spl_object_id($entity);
+        if (!$this->store->identityMap()->contains($entity)) {
+            throw InvalidPersistence::notManaged($entity, 'scheduleForUpdate');
+        }
+        if (isset($this->deletions[$oid])) {
+            throw new InvalidPersistence(\sprintf('The %s scheduled for deletion cannot be scheduled for an update.', $entity::class));
+        }
+        if (!isset($this->updates[$oid]) && !isset($this->insertions[$oid])) {
+            $this->updates[$oid] = $entity;
+        }
+    }
+
+    /**
+     * The entity deleted by this flush, no PreRemove dispatched and nothing cascaded (Doctrine's scheduleForDelete()):
+     * what a listener of the flush asks for an entity it found empty (an empty translation).
+     */
+    public function scheduleForDelete(object $entity): void
+    {
+        $oid = spl_object_id($entity);
+        if (isset($this->insertions[$oid])) {
+            unset($this->insertions[$oid], $this->changeSets[$oid]);
+            $this->store->forget($entity);
+
+            return;
+        }
+        if (!$this->store->identityMap()->contains($entity)) {
+            return;
+        }
+        unset($this->updates[$oid]);
+        $this->deletions[$oid] = $entity;
+    }
+
+    /**
+     * A property's change told by a listener (Doctrine's propertyChanged()): in the entity's change set, without
+     * scheduling an update - the stamp TrasheableSubscriber writes through an extra update.
+     */
+    public function propertyChanged(object $entity, string $property, mixed $before, mixed $after): void
+    {
+        $map = $this->store->mapping()->of($entity::class);
+        if (!isset($map->entity->fields[$property]) && !isset($map->entity->relations[$property])) {
+            return;
+        }
+        $this->changeSets[spl_object_id($entity)][$property] = [$before, $after];
+    }
+
+    /** What the unit of work remembers of one property, moved forward (Doctrine's setOriginalEntityProperty()). */
+    public function setOriginal(object $entity, string $property, mixed $value): void
+    {
+        $this->store->setOriginal($entity, $property, $value);
+    }
+
+    /**
+     * The to-many collections the running flush found changed (Doctrine's getScheduledCollectionUpdates()): each
+     * owner, property and collection - one changed since it was read, or one the application made holding elements.
+     *
+     * @return list<array{0: object, 1: string, 2: mixed}>
+     */
+    public function scheduledCollectionUpdates(): array
+    {
+        return array_values($this->collectionUpdates);
+    }
+
+    /** The entity removed at the next flush as an orphan (Doctrine's scheduleOrphanRemoval()). */
+    public function scheduleOrphanRemoval(object $entity): void
+    {
+        $this->orphans[spl_object_id($entity)] = $entity;
+    }
+
+    /** An orphan removal taken back (Doctrine's cancelOrphanRemoval()). */
+    public function cancelOrphanRemoval(object $entity): void
+    {
+        unset($this->orphans[spl_object_id($entity)]);
+    }
+
+    /**
+     * The entity's change set computed again with its associations (Doctrine's computeChangeSet() on a managed
+     * entity): its fields and to-one associations against what they were when last computed - a change found replaces
+     * the change set, as Doctrine's does -, then its collections (the join rows of an owning many-to-many, the new
+     * entities they reach). What a listener of OnFlush asks after it changed a collection (a reply's followers).
+     */
+    public function recomputeWithAssociations(object $entity): void
+    {
+        $oid = spl_object_id($entity);
+        if (isset($this->insertions[$oid]) && !isset($this->changeSets[$oid])) {
+            $this->computeChangeSet($entity);
+
+            return;
+        }
+        if (!$this->contains($entity)) {
+            throw InvalidPersistence::notManaged($entity, 'recomputeWithAssociations');
+        }
+        $this->computeChangeSet($entity);
+    }
+
+    /**
+     * The entity forgotten by the unit of work (Doctrine's detach()): not inserted, updated nor deleted by the flush,
+     * out of the identity map; nothing cascaded.
+     */
+    public function detach(object $entity): void
+    {
+        $oid = spl_object_id($entity);
+        unset($this->insertions[$oid], $this->updates[$oid], $this->deletions[$oid], $this->changeSets[$oid], $this->extraUpdates[$oid], $this->orphans[$oid]);
+        $this->store->forget($entity);
+    }
+
+    /** Whether the entity is a lazy object not read yet (Doctrine's isUninitializedObject()). */
+    public function isUninitializedObject(object $entity): bool
+    {
+        return $this->store->isUninitialized($entity);
+    }
+
+    /**
      * A removed entity taken back without its other changes being computed (Doctrine's persist() on a removed entity
      * during onFlush): it stays as its row is, unless an extra update writes it.
      */
@@ -404,7 +525,7 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
             if (null === $value) {
                 continue;
             }
-            if ($value instanceof LazyCollection && !$value->isInitialized() && !$read) {
+            if ($value instanceof LazyCollection && !$value->isInitialized() && !$value->isDirty() && !$read) {
                 continue;
             }
             foreach ($relation->isToOne() ? [$value] : $value as $related) {
@@ -420,7 +541,7 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
         $this->dispatch(new Lifecycle\PreFlush($this));
         $this->computeChangeSets();
 
-        if ([] === $this->insertions && [] === $this->updates && [] === $this->deletions && [] === $this->collectionWrites && [] === $this->orphans && [] === $this->extraUpdates) {
+        if ([] === $this->insertions && [] === $this->updates && [] === $this->deletions && [] === $this->collectionWrites && [] === $this->collectionUpdates && [] === $this->orphans && [] === $this->extraUpdates) {
             $this->dispatch(new Lifecycle\OnFlush($this));
             $this->dispatch(new Lifecycle\PostFlush($this));
 
@@ -578,8 +699,13 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
             }
             $originalCollection = $this->store->originalCollections($entity)[$relation->property] ?? null;
             // A collection never read, the one the store gave: unchanged, and holding no new entity.
-            $untouched = $value instanceof LazyCollection && !$value->isInitialized() && $originalCollection === $value;
+            $untouched = $value instanceof LazyCollection && !$value->isInitialized() && !$value->isDirty() && $originalCollection === $value;
             $entries = $untouched ? [] : ($value instanceof Collection ? $value->toArray() : $value);
+            // Doctrine's scheduled collection updates: a collection changed since it was read (PersistentCollection's
+            // isDirty()), or one the application made that holds an element (Doctrine wraps it, dirty unless empty).
+            if ($value instanceof LazyCollection ? $value->isDirty() : [] !== $entries) {
+                $this->collectionUpdates[$oid.'#'.$relation->property] = [$entity, $relation->property, $value];
+            }
             $owningManyToMany = Relation::MANY_TO_MANY === $relation->kind && $relation->owning;
             $orphanRemoval = $this->cascades->orphanRemoval($map->className(), $relation);
             if (!$untouched && ($owningManyToMany || $orphanRemoval)) {
@@ -591,10 +717,14 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
                 }
                 if ($owningManyToMany && ([] !== $removed || [] !== $added || $all)) {
                     $this->collectionWrites[$oid.'#'.$relation->property] = [$entity, $relation, $all ? [] : $removed, $added, $all];
-                    if (!isset($this->changeSets[$oid]) && !isset($this->insertions[$oid])) {
-                        $this->changeSets[$oid] = [];
-                        $this->updates[$oid] = $entity;
-                    }
+                }
+                // A changed owning many-to-many updates its owner with an empty change set - its PreUpdate runs -, as
+                // Doctrine does for a dirty PersistentCollection: even one holding what it held (cleared and filled
+                // again), not one only cleared (Doctrine's clear() takes its snapshot: no longer dirty).
+                $dirty = $value instanceof LazyCollection ? $value->isDirty() : ([] !== $removed || [] !== $added || $all);
+                if ($owningManyToMany && $dirty && !isset($this->changeSets[$oid]) && !isset($this->insertions[$oid])) {
+                    $this->changeSets[$oid] = [];
+                    $this->updates[$oid] = $entity;
                 }
             }
         }
@@ -641,7 +771,9 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
         if ($value === $original && $value instanceof LazyCollection) {
             $before = array_values($value->snapshot());
 
-            return [self::minus($before, $entries), self::minus($entries, $before), false];
+            // An owning collection cleared since it was read: every row of the owner goes first (Doctrine's collection
+            // deletion), its snapshot emptied then.
+            return [self::minus($before, $entries), self::minus($entries, $before), $value->wasCleared()];
         }
         $before = $original instanceof LazyCollection || $original instanceof Collection ? array_values($original->toArray()) : (\is_array($original) ? array_values($original) : []);
 
@@ -829,7 +961,7 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
                     $value->takeSnapshot();
                 } elseif ($value instanceof Collection || \is_array($value)) {
                     $elements = $value instanceof Collection ? $value->toArray() : $value;
-                    $collection = LazyCollection::of($elements);
+                    $collection = LazyCollection::of($elements, Relation::MANY_TO_MANY === $relation->kind && $relation->owning);
                     if ($value instanceof Collection) {
                         $this->store->setValue($entity, $property, $collection);
                     }
@@ -919,6 +1051,7 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
         $this->extraUpdates = [];
         $this->collectionWrites = [];
         $this->orphans = [];
+        $this->collectionUpdates = [];
         $this->notCascaded = [];
         $this->visited = [];
         $this->written = [];

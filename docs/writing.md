@@ -70,7 +70,18 @@ closes the unit of work (`UnsupportedPersistence::closed()`), as Doctrine closes
   `recomputeSingleEntityChangeSet()` - the first change set of an entity persisted during the flush.
 - `original()` (`Snapshots`): the fields and to-one associations as read or last flushed.
 - `scheduledInsertions()`, `scheduledUpdates()`, `scheduledDeletions()`, `scheduleExtraUpdate()`,
-  `cancelDeletion()`: what a listener of `OnFlush` reads and does on Doctrine's unit of work.
+  `cancelDeletion()`: what a listener of `OnFlush` reads and does on Doctrine's unit of work. Since the behaviours
+  (step F7c, second part; [omnibase's behaviours](behaviours.md)): `scheduleForUpdate()` (a forced update, its
+  PreUpdate dispatched), `scheduleForDelete()` (no PreRemove, nothing cascaded), `propertyChanged()`, `setOriginal()`,
+  `scheduledCollectionUpdates()` (the collections changed, as Doctrine's dirty PersistentCollections),
+  `scheduleOrphanRemoval()`, `cancelOrphanRemoval()`, `recomputeWithAssociations()` (Doctrine's `computeChangeSet()`
+  on a managed entity), `detach()`, `isUninitializedObject()`.
+- `LazyCollection` tells whether it changed since read (`isDirty()`, as PersistentCollection's: an element taken out
+  that was not there changes nothing), keeps an element added before it is read and puts it after the elements read
+  (no read for it), and on an owning many-to-many's `clear()` takes its snapshot (empty: the owner's rows all go at the
+  flush, `wasCleared()`) and is not dirty until an element is added - Doctrine's. A cleared and refilled owning
+  collection updates its owner with an empty change set (its PreUpdate runs), as Doctrine's dirty collection does.
+  `wrap()` gives the elements, once read, to another collection (omnibase's `OrderedArrayCollection`).
 - `PostLoad` for each entity the store reads, once the read is done, in Doctrine's order (after the entities a row
   makes it read at once through an owning association, before an inverse one-to-one read for it).
 
@@ -87,6 +98,7 @@ closes the unit of work (`UnsupportedPersistence::closed()`), as Doctrine closes
 ## Differences kept
 
 - A collection Doctrine marks dirty and then puts back as it was (add then remove the same element) is compared by its
-  elements here: no update, where Doctrine dispatches an empty `PreUpdate`.
+  elements for its join rows; since step F7c's second part it is dirty as Doctrine's, so its owner gets the same empty
+  `PreUpdate`.
 - An orphan-removing one-to-many replaced whole: the elements not in the new collection are removed through the unit
   of work (their `PreRemove`), where Doctrine deletes every row of the owner by SQL, those of the new collection too.

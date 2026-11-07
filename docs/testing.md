@@ -52,9 +52,9 @@ OMNIBRIDGE_ELOQUENT_SITE=1 php bin/phpunit vendor/omnibridge/eloquent/tests/Site
   pointing at a row of its target (the site's, else one written before it, so no cycle); a unique join column gets a
   target row of its own, a copy of a real row when the class has one; each many-to-many holding a row; foreign keys
   unchecked for the session. Each row read by id on both sides. Report: `var/eloquent-by-id-written.json`.
-- A difference only a behaviour's postLoad hook makes on Doctrine's side is reported apart (`postLoad only`), not as
-  unequal: omnibase's `#[OrderColumn]` writes its positions back as JSON text after Doctrine decoded them; the store
-  runs no lifecycle hook before step F7c (the writes and the lifecycle).
+- Since step F7c's second part the store runs the behaviours' PostLoad (the relay, `lifecycle` option): a difference
+  only a postLoad hook makes (omnibase's `#[OrderColumn]` writing User::$rolesPositions back) counts as a difference;
+  the report's `postLoad only` stays empty, and users are asserted compared.
 - `OMNIBRIDGE_ELOQUENT_TRACE=1` writes where a long run is to `var/eloquent-by-id.trace`.
 
 ### The finder parity (`tests/Site/FinderParityTest.php`)
@@ -104,3 +104,29 @@ application. Report: `var/eloquent-finder-parity-harness.json`.
 Made-up values in a thread's row send Doctrine's own read into an endless loop (seen on lesringostars, not
 investigated further: Doctrine's side, the row is the test's): that is why rows are copied from real ones where they
 exist and the made-up values stay plain.
+
+## omnibase's behaviours on both backends (step F7c, second part)
+
+- `tests/Omnibase/LifecycleTest`: what needs no host - a Doctrine-typed hook and an `EntityExtension` refused aloud,
+  `LazyCollection`'s changes as PersistentCollection's (dirty, added before read, an owning side cleared), `wrap()`.
+- `tests/Harness/WriteParityTest`, in omnisense/omnibase's harness (SQLite; the package mounted by the core's
+  `docker/compose.eloquent.yml`): each scenario through Doctrine's unit of work in a transaction rolled back, then
+  through this package's with omnibase's lifecycle attached (`tests/Support/OmnibaseHarness`, from the harness's
+  container), every column of every table it touches compared - identifiers as given, dates relative to the start,
+  what is random by its shape, a password hash by the password it verifies, a sealed value by what it opens to, an
+  upload by its content. Timestamp, Blameable and the trash; Slugify and GenerateUuid; Randomize and Cache;
+  OrderColumn and the revisions; Hashify; Vault; the passkeys' records; Uploader (its files removed after: a scratch
+  directory). Report: `var/eloquent-write-parity-harness.json`.
+
+  ```sh
+  docker compose -f compose.yml -f compose.checkouts.yml -f compose.eloquent.yml run --rm omnibase \
+      test --filter WriteParityTest /srv/omnibridge/eloquent/tests/Harness/WriteParityTest.php
+  ```
+- The core's behaviour tests run on both backends with the same overlay (`Tests\Base\Database\Backend\BothBackends`:
+  OrderColumnLazyTest, SlugifyPerTypeTest, UploaderSplFileInfoTest, EmptyTrashTest, ThreadParticipantsTest,
+  BehaviourBackendsTest).
+- `tests/Site/WriteParityTest`, on an application's database (lesringostars): an Article and its translation written on
+  both (Countify, Slugify, GenerateUuid, Timestamp, a revision), in transactions rolled back, the new rows compared with
+  their identifiers numbered per hierarchy. `tests/Site/ByIdParityTest` reads with the relay attached: the behaviours'
+  PostLoad runs on both sides (User::$rolesPositions included, asserted).
+

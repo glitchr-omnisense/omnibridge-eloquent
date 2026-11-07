@@ -28,7 +28,9 @@
         "phpunit/phpunit": "^11.5"
     },
     "suggest": {
-        "omnisense/omnibase": "Omnibridge\\Eloquent\\Omnibase\\: omnibase's persistence on Eloquent (its backend and scopes, the repositories, the finder compiler); loaded only with the core"
+        "omnisense/omnibase": "Omnibridge\\Eloquent\\Omnibase\\: omnibase's persistence on Eloquent (its backend and scopes, the repositories, the finder compiler, the behaviours and listeners); loaded only with the core",
+        "doctrine/persistence": "omnibase's entity dispatchers (user.*, thread.*), whose hooks take its LifecycleEventArgs (^3.0|^4.0)",
+        "web-auth/webauthn-lib": "The passkeys' records (PasskeyRepository as webauthn's credential repository) (^5.3)"
     },
     "autoload": {
         "psr-4": {

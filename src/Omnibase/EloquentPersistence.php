@@ -9,6 +9,7 @@ use Omnibridge\Eloquent\Casts;
 use Omnibridge\Eloquent\EloquentUnitOfWork;
 use Omnibridge\Eloquent\EntityStore;
 use Omnibridge\Eloquent\Mapping;
+use Omnibridge\Eloquent\Omnibase\Lifecycle\OmnibaseListeners;
 use Omnibridge\Schema\Description;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
@@ -24,8 +25,9 @@ use Psr\EventDispatcher\EventDispatcherInterface;
  * Options: EntitySchema's (project_dir, enumerations, types, resolve_target_entities, rules, column_types),
  * `directories` (more entity folders, a bundle's), `repositories` (an application's repositories on the store, by
  * entity: EloquentRepositories::register()) and `dispatcher` (the host's PSR-14 dispatcher, given the unit of work's
- * Lifecycle events). The associations cascade as their mapping and omnibase's #[Cascade] and #[OrphanRemoval] say
- * (OmnibaseCascades).
+ * Lifecycle events) and `lifecycle` (omnibase's behaviours and listeners on the unit of work: OmnibaseListeners'
+ * options, step F7c). The associations cascade as their mapping and omnibase's #[Cascade] and #[OrphanRemoval] say
+ * (OmnibaseCascades). The behaviours' parts are registered for the unit of work (EloquentBehaviours).
  */
 final class EloquentPersistence
 {
@@ -52,7 +54,23 @@ final class EloquentPersistence
         $cascades->extend(OmnibaseCascades::resolver());
         $unitOfWork = new EloquentUnitOfWork($store, $dispatcher, $cascades);
 
-        return new self($store, $unitOfWork, new EloquentBackend($unitOfWork), new EloquentRepositories($store, $options['repositories'] ?? [], $unitOfWork));
+        $persistence = new self($store, $unitOfWork, new EloquentBackend($unitOfWork), new EloquentRepositories($store, $options['repositories'] ?? [], $unitOfWork));
+        // The behaviours' parts (step F7c), asked through omnisense/omnibase's Backends by this unit of work.
+        EloquentBehaviours::ensureRegistered();
+        EloquentBehaviours::remember($persistence);
+        if (\is_array($options['lifecycle'] ?? null)) {
+            $persistence->lifecycle = OmnibaseListeners::attach($unitOfWork, $options['lifecycle']);
+        }
+
+        return $persistence;
+    }
+
+    private ?OmnibaseListeners $lifecycle = null;
+
+    /** The behaviours' relay and the listeners' adapters attached by the option "lifecycle" (null without it). */
+    public function lifecycle(): ?OmnibaseListeners
+    {
+        return $this->lifecycle;
     }
 
     public function store(): EntityStore
