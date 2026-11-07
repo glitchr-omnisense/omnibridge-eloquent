@@ -28,7 +28,8 @@ use Psr\EventDispatcher\EventDispatcherInterface;
  *         'setting_bag' => fn () => $settingBag,                              // SettingListener
  *         'translator' => fn () => $overridingTranslator,                     // TextOverrideListener
  *         'dispatcher' => $psr14, 'requests' => $requests,                    // the entity dispatchers' events
- *         'entity_dispatchers' => [UserEventDispatcher::class, ...],          // made on this unit of work
+ *         'entity_dispatchers' => [UserEventDispatcher::class, ...],          // made on this unit of work (or the
+ *                                                                             // host's, an iterable or a closure: read lazily)
  *         'user_subscriber' => fn () => $userSubscriber,                      // its preFlush()
  *         'demo_lock' => $demoAccountLock,                                    // DemoAccountLockListener
  *         'entity_extension' => $entityExtension,                             // refused aloud when it holds an extension
@@ -55,15 +56,21 @@ final class OmnibaseListeners
         $self = new self();
 
         $extension = $options['entity_extension'] ?? null;
-        if ($extension instanceof EntityExtension && [] !== $extension->getExtensions()) {
-            throw UnsupportedPersistence::operation(
-                'write the entries of an EntityExtension ('.implode(', ', array_keys($extension->getExtensions())).')',
-                'omnibridge/doctrine\'s ExtensionSubscriber writes them on Doctrine only; no extension is registered by omnibase, its bundles or lesringostars'
-            );
+        if ($extension instanceof EntityExtension) {
+            self::refuseExtensions($extension);
+        } elseif ($extension instanceof \Closure) {
+            // A host's (step F7d): asked at the first flush, once every service it is collected from can be made.
+            $checked = false;
+            $unitOfWork->listen(static function (object $event) use ($extension, &$checked): void {
+                if (!$checked && $event instanceof \Omnibridge\Persistence\Lifecycle\PreFlush) {
+                    $checked = true;
+                    ($given = $extension()) instanceof EntityExtension && self::refuseExtensions($given);
+                }
+            });
         }
 
         $reader = $options['attribute_reader'] ?? (AttributeReader::hasInstance() ? AttributeReader::getInstance(false) : null);
-        if ($reader instanceof AttributeReader) {
+        if ($reader instanceof AttributeReader || $reader instanceof \Closure) {
             $self->add($unitOfWork, AttributeRelay::attach($unitOfWork, $reader));
         }
         $self->add($unitOfWork, new IntlListener());
@@ -83,7 +90,14 @@ final class OmnibaseListeners
             $self->add($unitOfWork, new TextOverrideListener($options['translator']));
         }
         $dispatcher = $options['dispatcher'] ?? null;
-        foreach ($options['entity_dispatchers'] ?? [] as $entityDispatcher) {
+        $entityDispatchers = $options['entity_dispatchers'] ?? [];
+        if ($entityDispatchers instanceof \Closure || $entityDispatchers instanceof \Traversable) {
+            // A host's own dispatchers (its container's services, made on this unit of work: step F7d), read at the
+            // first entity event - they live as long as the container that holds this persistence.
+            $self->add($unitOfWork, new EntityDispatchersListener($entityDispatchers, $unitOfWork));
+            $entityDispatchers = [];
+        }
+        foreach ($entityDispatchers as $entityDispatcher) {
             if (\is_string($entityDispatcher)) {
                 if (!$dispatcher instanceof EventDispatcherInterface) {
                     throw new \InvalidArgumentException('The entity dispatchers are made with the option "dispatcher", a PSR-14 event dispatcher.');
@@ -99,12 +113,23 @@ final class OmnibaseListeners
         if (isset($options['user_subscriber'])) {
             $self->add($unitOfWork, new PreFlushListener($options['user_subscriber']));
         }
-        if (($options['demo_lock'] ?? null) instanceof DemoAccountLock) {
+        if (($options['demo_lock'] ?? null) instanceof DemoAccountLock || ($options['demo_lock'] ?? null) instanceof \Closure) {
             $requests = $options['requests'] ?? null;
             $self->add($unitOfWork, new DemoAccountLockListener($options['demo_lock'], $requests instanceof Requests ? $requests : null));
         }
 
         return $self;
+    }
+
+    /** An EntityExtension holding an extension refused aloud: its entries are written on Doctrine only. */
+    private static function refuseExtensions(EntityExtension $extension): void
+    {
+        if ([] !== $extension->getExtensions()) {
+            throw UnsupportedPersistence::operation(
+                'write the entries of an EntityExtension ('.implode(', ', array_keys($extension->getExtensions())).')',
+                'omnibridge/doctrine\'s ExtensionSubscriber writes them on Doctrine only; no extension is registered by omnibase, its bundles or lesringostars'
+            );
+        }
     }
 
     /** @return list<object> the relay and the adapters, in the order they listen */

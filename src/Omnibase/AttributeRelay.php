@@ -54,19 +54,44 @@ final class AttributeRelay
     /** @var array<string, bool> attribute class::Doctrine hook => whether it overrides AbstractAttribute's */
     private static array $overrides = [];
 
-    public function __construct(private readonly AttributeReader $attributeReader)
+    /** @var AttributeReader|(\Closure(): ?AttributeReader) */
+    private AttributeReader|\Closure $attributeReader;
+
+    /**
+     * @param AttributeReader|(\Closure(): ?AttributeReader) $attributeReader a closure is asked at the first event (a
+     *                                                                       host's reader, made after the persistence
+     *                                                                       it is made with: step F7d)
+     */
+    public function __construct(AttributeReader|\Closure $attributeReader)
     {
+        $this->attributeReader = $attributeReader;
         EloquentBehaviours::ensureRegistered();
     }
 
     /** The relay listening to the unit of work's events. */
-    public static function attach(EloquentUnitOfWork $unitOfWork, ?AttributeReader $attributeReader = null): self
+    public static function attach(EloquentUnitOfWork $unitOfWork, AttributeReader|\Closure|null $attributeReader = null): self
     {
         $attributeReader ??= AttributeReader::hasInstance() ? AttributeReader::getInstance(false) : null;
-        $relay = new self($attributeReader ?? throw new \LogicException('No omnibase AttributeReader to relay the behaviours with (it is made by the host: omnibridge/symfony, omnibridge/laravel).'));
+        $relay = new self($attributeReader ?? throw self::noReader());
         $unitOfWork->listen($relay(...));
 
         return $relay;
+    }
+
+    /** The reader the behaviours are read with: the one given, or the host's, asked once. */
+    public function attributeReader(): AttributeReader
+    {
+        if ($this->attributeReader instanceof \Closure) {
+            $reader = ($this->attributeReader)() ?? (AttributeReader::hasInstance() ? AttributeReader::getInstance(false) : null);
+            $this->attributeReader = $reader instanceof AttributeReader ? $reader : throw self::noReader();
+        }
+
+        return $this->attributeReader;
+    }
+
+    private static function noReader(): \LogicException
+    {
+        return new \LogicException('No omnibase AttributeReader to relay the behaviours with (it is made by the host: omnibridge/symfony, omnibridge/laravel, Omnibridge\\Container).');
     }
 
     public function __invoke(object $event): void
@@ -87,7 +112,7 @@ final class AttributeRelay
 
         foreach (array_merge($this->entityInsertionBuffer, $this->entityUpdateBuffer, $this->entityDeletionBuffer) as $entity) {
             $className = $entity::class;
-            $attributes = $this->attributeReader->getAttributes($className);
+            $attributes = $this->attributeReader()->getAttributes($className);
             $changeSet = $this->changeSet($unitOfWork, $entity);
 
             foreach ($attributes[AttributeReader::TARGET_PROPERTY][$className] ?? [] as $property => $propertyAttributes) {
@@ -121,7 +146,7 @@ final class AttributeRelay
 
         foreach (array_merge($this->entityInsertionBuffer, $this->entityUpdateBuffer, $this->entityDeletionBuffer) as $entity) {
             $className = $entity::class;
-            $attributes = $this->attributeReader->getAttributes($className);
+            $attributes = $this->attributeReader()->getAttributes($className);
             $changeSet = $this->changeSet($unitOfWork, $entity);
 
             foreach ($attributes[AttributeReader::TARGET_PROPERTY][$className] ?? [] as $property => $propertyAttributes) {
@@ -152,7 +177,7 @@ final class AttributeRelay
         $unitOfWork = $this->unitOfWork($event);
         foreach (array_merge($this->entityCandidateBuffer, $this->entityInsertionBuffer, $this->entityUpdateBuffer, $this->entityDeletionBuffer) as $entity) {
             $className = $entity::class;
-            $attributes = $this->attributeReader->getAttributes($className);
+            $attributes = $this->attributeReader()->getAttributes($className);
             $changeSet = $this->changeSet($unitOfWork, $entity);
 
             foreach ($attributes[AttributeReader::TARGET_PROPERTY][$className] ?? [] as $property => $propertyAttributes) {
@@ -192,7 +217,7 @@ final class AttributeRelay
         }
         $entity = $event->entity;
         $className = $entity::class;
-        $attributes = $this->attributeReader->getAttributes($className);
+        $attributes = $this->attributeReader()->getAttributes($className);
 
         foreach ($attributes[AttributeReader::TARGET_PROPERTY][$className] ?? [] as $property => $propertyAttributes) {
             foreach ($propertyAttributes as $attribute) {
@@ -241,7 +266,7 @@ final class AttributeRelay
     private function applies(mixed $attribute, string $target, string $targetValue, object $entity): bool
     {
         return is_subclass_of($attribute, AbstractAttribute::class)
-            && \in_array($target, $this->attributeReader->getAttributeTargets($attribute), true)
+            && \in_array($target, $this->attributeReader()->getAttributeTargets($attribute), true)
             && $attribute->supports($target, $targetValue, $entity);
     }
 

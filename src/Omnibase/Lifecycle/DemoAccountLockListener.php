@@ -19,8 +19,13 @@ final class DemoAccountLockListener
 {
     private bool $told = false;
 
-    public function __construct(private readonly DemoAccountLock $lock, private readonly ?Requests $requests = null)
+    /** @var DemoAccountLock|(\Closure(): ?DemoAccountLock)|null */
+    private DemoAccountLock|\Closure|null $lock;
+
+    /** @param DemoAccountLock|(\Closure(): ?DemoAccountLock) $lock a closure is asked at the first flush during a request (a host's service: step F7d), none means nothing to keep */
+    public function __construct(DemoAccountLock|\Closure $lock, private readonly ?Requests $requests = null)
     {
+        $this->lock = $lock;
     }
 
     public function __invoke(object $event): void
@@ -29,6 +34,13 @@ final class DemoAccountLockListener
             return;
         }
         if (null === $this->requests || !$this->requests->has()) {
+            return;
+        }
+        if ($this->lock instanceof \Closure) {
+            $lock = ($this->lock)();
+            $this->lock = $lock instanceof DemoAccountLock ? $lock : null;
+        }
+        if (null === $this->lock) {
             return;
         }
         $unitOfWork = $event->unitOfWork;

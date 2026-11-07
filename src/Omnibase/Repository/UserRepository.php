@@ -2,6 +2,8 @@
 
 namespace Omnibridge\Eloquent\Omnibase\Repository;
 
+use Base\Contract\SecurityUserLoader;
+use Base\Contract\SecurityUserProvider;
 use Base\Database\Repository\Finder\Group;
 use Base\Entity\User;
 use Base\Repository\Users;
@@ -9,13 +11,51 @@ use Omnibridge\Eloquent\Omnibase\EloquentEntities;
 
 /**
  * omnibridge/doctrine's UserRepository on Eloquent (plan "omnibase agnostic", step F7b): the same finders, compiled by
- * EloquentFinder. The security host's user loader and provider (loadUserByIdentifier(), refreshUser(),
- * upgradePassword()) are the host's, not here (step F7d).
+ * EloquentFinder. Security's user loader, user provider and password upgrader too (step F7d), as Doctrine's declares
+ * them through Base\Contract\SecurityUserLoader and SecurityUserProvider (Symfony's interfaces where its security and
+ * doctrine-bridge are installed, empty ones elsewhere): what omnibridge/symfony's UserProvider and the entity user
+ * provider of a site's security.yaml ask, the same answers; the password written by the unit of work's flush.
  *
  * @extends EloquentEntities<User>
  */
-class UserRepository extends EloquentEntities implements Users
+class UserRepository extends EloquentEntities implements SecurityUserLoader, SecurityUserProvider, Users
 {
+    public function supportsClass(string $class): bool
+    {
+        return is_a($class, \App\Entity\User::class, true);
+    }
+
+    /** @return \Symfony\Component\Security\Core\User\UserInterface */
+    public function loadUserByIdentifier(string $identifier): \Symfony\Component\Security\Core\User\UserInterface
+    {
+        $user = $this->findOneByEmail($identifier);
+        if (null === $user) {
+            throw new \Symfony\Component\Security\Core\Exception\UserNotFoundException();
+        }
+
+        return $user;
+    }
+
+    public function refreshUser(\Symfony\Component\Security\Core\User\UserInterface $user): \Symfony\Component\Security\Core\User\UserInterface
+    {
+        $user = $this->cacheOneByEmail($user->getEmail());
+        if (!$user instanceof \App\Entity\User) {
+            throw new \Symfony\Component\Security\Core\Exception\UnsupportedUserException(sprintf('Invalid user class "%s".', get_debug_type($user)));
+        }
+
+        if ($user->isKicked()) {
+            throw new \Symfony\Component\Security\Core\Exception\UnsupportedUserException('You have been kicked..');
+        }
+
+        return $user;
+    }
+
+    public function upgradePassword(\Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface $user, string $newHashedPassword): void
+    {
+        $user->setPassword($newHashedPassword);
+        $this->unitOfWork()->flush();
+    }
+
     public function oneByUsername(string $username, bool $cached = true): ?User
     {
         return $cached ? $this->cacheOneByUsername($username) : $this->findOneByUsername($username);

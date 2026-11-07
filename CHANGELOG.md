@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added: the persistence of a host (omnisense/omnibase's plan "omnibase agnostic", step F7d)
+
+- `Container::definitions()`: the services omnisense/omnibridge's `Omnibridge\Container` adds when it runs on Eloquent
+  (`Persistences`): the persistence (`EloquentPersistence::fromContainer()`), the unit of work as UnitOfWork and
+  Snapshots, the backend, Repositories, the core's repository interfaces; `Container::interfaces()` (each with the
+  application's entity it reads: Users the application's users).
+- `EloquentPersistence::host()`: omnibase's lifecycle attached from a host's services (`HOST_SERVICES`, each made when
+  first needed), the host's own entity dispatchers (an iterable or a closure: their life is the container's);
+  without an AttributeReader, reads only and a writing flush refused aloud. `fromContainer()` (plain PHP: Capsule on
+  `database.url`/DATABASE_URL, the trash and vault scopes on). `reset()`.
+- `EloquentUnitOfWork::clear()`: nothing scheduled, nothing managed, a closed unit of work open again.
+- `Omnibase\Lifecycle\EntityDispatchersListener`; `AttributeRelay`, `DemoAccountLockListener` and `OmnibaseListeners`
+  take closures (`attribute_reader`, `demo_lock`, `entity_extension`, `entity_dispatchers`), asked when first needed.
+- `Omnibase\Repository\UserRepository` is Security's user loader and provider (Base\Contract\SecurityUserLoader,
+  SecurityUserProvider): `supportsClass()`, `loadUserByIdentifier()`, `refreshUser()`, `upgradePassword()`, as
+  omnibridge/doctrine's.
+- `tests/Omnibase/HostTest`; `tests/Site/articles.php`: lesringostars' articles in plain PHP through Capsule.
+  Docs: docs/hosts.md.
+
 ### Added: lesringostars' write flows compared row by row (omnisense/omnibase's plan "omnibase agnostic", step F7c, third part)
 
 - `tests/Site/FlowParityTest`: seven flows of lesringostars (sign-up, sign-in, comment and reply, newsletter, trash and

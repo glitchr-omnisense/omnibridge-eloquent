@@ -420,6 +420,24 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
         $this->store->forget($entity);
     }
 
+    /**
+     * Everything forgotten (Doctrine's clear(), what its registry does to the entity manager between two requests:
+     * kernel.reset): nothing scheduled, no entity managed, the next reads make new objects; a unit of work a failed
+     * flush closed is open again, as the registry makes a new entity manager in place of a closed one. Refused
+     * during a flush.
+     */
+    public function clear(): void
+    {
+        if ($this->flushing) {
+            throw UnsupportedPersistence::operation('clear the unit of work during a flush', 'Doctrine refuses it too');
+        }
+        $this->insertions = $this->updates = $this->deletions = $this->changeSets = $this->extraUpdates = [];
+        $this->collectionWrites = $this->orphans = $this->collectionUpdates = $this->notCascaded = $this->visited = [];
+        $this->computed = $this->written = [];
+        $this->closed = false;
+        $this->store->clear();
+    }
+
     /** Whether the entity is a lazy object not read yet (Doctrine's isUninitializedObject()). */
     public function isUninitializedObject(object $entity): bool
     {
