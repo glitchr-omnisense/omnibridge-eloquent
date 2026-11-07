@@ -23,7 +23,7 @@ docker compose -f compose.yml -f compose.checkouts.yml run --rm test  # the fami
 | `ConnectionsTest` | a database URL read as Illuminate's configuration; Capsule's connection, a connection on an open PDO (the same database), a Laravel database manager's (Capsule's manager answers the same `ConnectionResolverInterface` as `app('db')`) |
 | `Omnibase\OmnibasePartTest` | with the core installed: omnibase's column types (`array`, the passkeys', UTC datetime, an enumeration); the core's `Repositories`/`Entities` on the store (a criteria array through the finder: a field, an association by entity or identifier, IN, `= NULL` as omnibase's finder compares it, order, limit; `byIds()` in order; a repository made without a unit of work refusing to write); the backend's name, features and scopes |
 | `Omnibase\FinderTest` | the finder language compiled by `EloquentFinder` on the fixtures: each word of a criterion, the associations joined (to-one, many-to-many, one-to-many, a path) and the key not, the discriminator words, the groups and separators, the requests and their shapes (a FinderQuery, Last/AtMost/Next/Previous, counts, a grouped count's rows, lengths, sumOf/minOf/maxOf, a selected value), the orders (FIELD, a path, RANDOM, limit and offset), what is refused aloud |
-| `Omnibase\RepositoriesTest` | the core's entities described with no Doctrine: each of the 28 repository interfaces of `Aliases::INTERFACES` implemented on the store, a subclass given its parent's repository, a registered one; the 14 `#[BackendOnly('doctrine')]` methods refused with `UnsupportedQueryException`; ScopedWeeks::save()/forget() and WeekDays::save() through the unit of work, read back |
+| `Omnibase\RepositoriesTest` | the core's entities described with no Doctrine: each of the 28 repository interfaces of `Aliases::INTERFACES` implemented on the store, a subclass given its parent's repository, a registered one; the 14 `#[BackendOnly]` methods run on SQLite (ON CONFLICT, INSERT ... ON CONFLICT DO NOTHING, hits + 1), refused for a persistence the declaration does not name; a registered repository's factory; ScopedWeeks::save()/forget() and WeekDays::save() through the unit of work, read back |
 | `Omnibase\OmnibaseCascadesTest` | omnibase's `#[Cascade]` and `#[OrphanRemoval]` on a property and on its class, over the mapping's, a parent keeping its own |
 
 `tests/Support/Normaliser.php`: an entity as plain data - its class, its mapped fields (a date as its class, time and
@@ -162,3 +162,18 @@ OMNIBRIDGE_ELOQUENT_FLOWS=compare php bin/phpunit vendor/omnibridge/eloquent/tes
 
 The flows write only to a database named `f7c3_*` (asserted). Doctrine's second-level cache is emptied with its
 identity map between steps, so that a read says what was written (Eloquent has none).
+
+### The methods no finder compiles, an application's repositories (step F7f)
+
+- `tests/Harness/BackendWrittenParityTest` (omnisense/omnibase's harness, SQLite) and `tests/Site/BackendWrittenParityTest`
+  (an application's MySQL database, a scratch copy of it): the 14 `#[BackendOnly]` methods on both backends
+  (`Support\BackendWrittenParity`) - the ten reads for windows and page filters on the rows there, the four writes run
+  alike in a transaction rolled back, their rows (without identifiers) and the reads of their window compared. On
+  SQLite, `Visits::returning()` is a known difference: omnibridge/doctrine's alias `returning` is a keyword there.
+- `tests/Site/AppRepositoriesParityTest`: lesringostars' eleven App\Repository interfaces and its accounts' provider,
+  each method on its Doctrine repository and on App\Persistence\Eloquent's, registered as the site registers them.
+
+```sh
+DOCTRINE_TEST_DATABASE=f7f_lesringostars_test OMNIBRIDGE_ELOQUENT_SITE=1 php bin/phpunit vendor/omnibridge/eloquent/tests/Site/BackendWrittenParityTest.php
+DOCTRINE_TEST_DATABASE=f7f_lesringostars_test OMNIBRIDGE_ELOQUENT_SITE=1 php bin/phpunit vendor/omnibridge/eloquent/tests/Site/AppRepositoriesParityTest.php
+```

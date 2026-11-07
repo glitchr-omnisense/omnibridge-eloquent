@@ -56,8 +56,12 @@ values as the database gives them, in the order Doctrine selects them.
 - **A path through more than one association**, a field the entity does not have, an order on an association itself.
 - **A JSON field compared through a path**, or Insensitive on one JSON value.
 - **An expression `Expressions` does not translate**: a parameter, another function, a name that is no field.
-- **The 14 methods declared `#[BackendOnly('doctrine')]`** on the core's interfaces: the analytics' upserts and
-  breakdowns in native SQL, `Redirections::hit()`'s bulk UPDATE (`BackendOnly::refuse(..., 'eloquent')`).
+
+The 14 methods declared `#[BackendOnly(['doctrine', 'eloquent'])]` on the core's interfaces are no finder: the
+analytics' upserts, `INSERT IGNORE` and breakdowns, `Redirections::hit()`'s bulk UPDATE. Each persistence writes them;
+here they are omnibridge/doctrine's statements sent through Illuminate's connection (`Repository\Analytics\Statements`:
+the table wrapped by the grammar, positional bindings, MySQL's or SQLite's form by the driver), and `hit()` one
+`UPDATE ... SET hits = hits + 1` on the row - the same rows (tests/Harness and tests/Site `BackendWrittenParityTest`).
 
 What Doctrine refuses with its own message (an AND/OR ambiguity, an operator a list does not take, an Older/Younger
 date) is refused with the same message.
@@ -69,7 +73,10 @@ date) is refused with the same message.
 `EloquentRepositories::of($class)` gives the core's repository on Eloquent for its entity and the entity's subclasses
 (`Repository\*`, one per interface of `Base\Repository\Aliases::INTERFACES`: `Threads`, `Users`, `Comments`, `Tags`,
 `ThreadTranslations`, the analytics, the hours...). An application registers its own with `register()`, and any other
-class gets the plain `EloquentEntities`. `implementing($interface)` gives the repository of a core interface. Writes
+class gets the plain `EloquentEntities`; `register($entity, $class, $factory)` makes it with a factory when it needs more
+than the store (lesringostars' comments' counts take a cache). `implementing($interface)` gives the repository of a
+core interface: the one that declares it before a registered subclass that only inherits it (an application's
+`ArticleRepository`, an `Articles` and so a `Threads`, does not answer `Threads`). Writes
 (`persist`, `remove`, `flush`, `ScopedWeeks::save()`...) go through the unit of work ([Writing entities](writing.md)).
 
 ## Known differences with omnibridge/doctrine

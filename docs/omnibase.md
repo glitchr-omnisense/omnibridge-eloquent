@@ -32,7 +32,8 @@ $user = $users->findOneBy(['email' => 'someone@example.org']);
   an application's own (`register()`), else the plain `EloquentEntities`; `implementing($interface)`; `byIds()`,
   `oneById()`. Every repository reads the finder language (`findOneByEmailOrUsername()`, `countByStateAnd...()`) and
   `findBy()`'s criteria array as omnibridge/doctrine's `ServiceEntityRepository` reads them - see [the finder
-  language](finder.md). The 14 `#[BackendOnly('doctrine')]` methods are refused with `UnsupportedQueryException`.
+  language](finder.md). The 14 `#[BackendOnly]` methods (no finder) are written here
+  on Eloquent's connection: omnibridge/doctrine's statements, the same rows.
 
 **Writes** ([Writing entities](writing.md)): through the unit of work, the repositories' `persist()`, `remove()` and
 `flush()` as `ServiceEntityRepository`'s, `ScopedWeeks::save()`/`forget()` and `WeekDays::save()` as omnibridge/doctrine's.

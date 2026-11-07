@@ -2,14 +2,13 @@
 
 namespace Omnibridge\Eloquent\Omnibase\Repository\Layout;
 
-use Base\Database\Repository\BackendOnly;
 use Base\Entity\Layout\Redirection;
 use Base\Repository\Layout\Redirections;
 use Omnibridge\Eloquent\Omnibase\EloquentEntities;
 
 /**
  * omnibridge/doctrine's Layout\RedirectionRepository on Eloquent (plan "omnibase agnostic", step F7b): the same finders, compiled by
- * EloquentFinder.
+ * EloquentFinder; hit(), declared #[BackendOnly] on the interface (no finder), one UPDATE on Eloquent's connection (F7f).
  *
  * @extends EloquentEntities<Redirection>
  */
@@ -46,9 +45,25 @@ class RedirectionRepository extends EloquentEntities implements Redirections
         return null;
     }
 
-    /** A bulk UPDATE (hits = hits + 1, atomic): omnibridge/doctrine's only, refused aloud here. */
+    /**
+     * omnibridge/doctrine's bulk DQL UPDATE as one statement on the row (step F7f): hits = hits + 1 in the database,
+     * atomic under concurrent requests, and the moment of the hit; the entity in memory is left as it was read, as a
+     * DQL UPDATE leaves it.
+     */
     public function hit(Redirection $redirection): void
     {
-        BackendOnly::refuse(Redirections::class, __FUNCTION__, 'eloquent');
+        $map = $this->entityMap();
+        $casts = $this->store->casts();
+        $identifier = $map->identifier[0];
+        $hits = $map->entity->fields['hits'];
+        $lastHitAt = $map->entity->fields['lastHitAt'];
+        $connection = $this->store->connection();
+
+        $connection->table($map->tableOf('hits'))
+            ->where($identifier->column, '=', $casts->toDatabase($identifier->type, $redirection->getId()))
+            ->update([
+                $hits->column => $connection->raw($connection->getQueryGrammar()->wrap($hits->column).' + 1'),
+                $lastHitAt->column => $casts->toDatabase($lastHitAt->type, new \DateTimeImmutable('now', new \DateTimeZone('UTC'))),
+            ]);
     }
 }

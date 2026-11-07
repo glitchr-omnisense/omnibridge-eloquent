@@ -123,6 +123,30 @@ final class EntityStore
         return isset($this->conditions[$name]);
     }
 
+    /**
+     * $work run without the condition $name (a backend's scope is "scope:<name>": "scope:trash"), the condition set
+     * again after it whatever happens - what Doctrine's SQL filter disabled for one query gives (lesringostars'
+     * Subscribers::findOneByEmailIncludingTrashed()).
+     *
+     * @template R
+     *
+     * @param \Closure(): R $work
+     *
+     * @return R
+     */
+    public function without(string $name, \Closure $work): mixed
+    {
+        $condition = $this->conditions[$name] ?? null;
+        unset($this->conditions[$name]);
+        try {
+            return $work();
+        } finally {
+            if (null !== $condition) {
+                $this->conditions[$name] = $condition;
+            }
+        }
+    }
+
     /** Forgets every entity read: the next read makes new objects. */
     public function clear(): void
     {

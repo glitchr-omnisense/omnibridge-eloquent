@@ -45,11 +45,12 @@ user provider of security.yaml for the application's users (no `property`) becom
 The core's services name its repository interfaces, so they answer from Eloquent; the entities' UniqueEntity rules look
 an entity Eloquent read up through Eloquent. Eloquent and Doctrine share one PDO: a flush joins a transaction Doctrine
 began on it, and the connection lets the PDO go when the kernel shuts down. What still names Doctrine's services by
-their ids stays on Doctrine: the application's own repositories (`App\Repository\*`, until it gives them Eloquent
-implementations), the back office (EasyAdmin), the console commands named after Doctrine, what reads Doctrine's
-metadata only. The repository methods written for Doctrine alone (`#[BackendOnly]`: the analytics' native SQL,
-Redirections::hit()) are refused aloud: on Eloquent a page view is not counted (the refusal comes after the response,
-at kernel.terminate) and the back office's layout, which counts the unique views, answers 500.
+their ids stays on Doctrine: the back office (EasyAdmin), the console commands named after Doctrine, what reads
+Doctrine's metadata only. An application's own repositories follow the switch when it gives them Eloquent
+implementations and registers them (`EloquentRepositories::register()`): lesringostars' App\Persistence\Eloquent,
+chosen by a compiler pass reading `base.persistence` (its classes cannot be loaded without this package, so no
+`#[AsAlias]` can name them), and by its twin's service provider under Laravel. The methods no finder compiles
+(`#[BackendOnly]`: the analytics' native SQL, Redirections::hit()) run here in their Eloquent form.
 
 ## Laravel
 

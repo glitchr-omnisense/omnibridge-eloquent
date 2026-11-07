@@ -75,8 +75,9 @@ and gives:
   `cacheOneByStateAndSlugStartingWith()`, `countForParentByState()`, `sumOfViewsBy()`... - read by the core's
   `Finder\Parser` and compiled onto Illuminate's query builder word for word as omnibridge/doctrine compiles them to DQL
   (the joins with the scopes in their ON, the Translatable join, the key, the groups, FIELD/RAND/JSON_ARRAY_POSITION,
-  the grouped counts and their rows); what it cannot express is refused aloud (`UnsupportedQueryException`), the 14
-  `#[BackendOnly('doctrine')]` methods among it. See [docs/finder.md](docs/finder.md).
+  the grouped counts and their rows); what it cannot express is refused aloud (`UnsupportedQueryException`). The 14
+  `#[BackendOnly]` methods (the analytics' native SQL, `Redirections::hit()`) are written on Eloquent's connection.
+  See [docs/finder.md](docs/finder.md).
 
 ## Tests
 

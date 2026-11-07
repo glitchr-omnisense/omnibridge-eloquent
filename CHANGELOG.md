@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added: the methods no finder compiles, an application's repositories (omnisense/omnibase's plan "omnibase agnostic", step F7f)
+
+- The 14 methods the core declares `#[BackendOnly]` run on Eloquent's connection instead of being refused: `PageViews`
+  (`incrementView()`'s upsert - ON DUPLICATE KEY UPDATE on MySQL, ON CONFLICT elsewhere -, the daily and hourly
+  breakdowns, by source too), `PageVisits` (`recordPresence()`'s INSERT IGNORE, `countUnique()` over a DISTINCT
+  subquery, the breakdowns), `Visits` (`recordPresence()`, `returning()`, the breakdowns), `Redirections::hit()` (one
+  `UPDATE ... SET hits = hits + 1, last hit` on the row; the entity in memory left as read, as a DQL UPDATE leaves it).
+  omnibridge/doctrine's statements, through `Repository\Analytics\Statements` (the grammar's table, positional
+  bindings, the platform by the driver); `returning()` quotes its alias, a keyword of SQLite since 3.35. In eloquent
+  mode a page view is counted again and the back office's layout (its unique views) renders.
+- `EloquentRepositories::register()` takes a factory, for an application's repository that needs more than the store
+  (lesringostars' comments' counts take a cache); `implementing()` answers with the repository that declares the
+  interface before a registered subclass that only inherits it (an application's `ArticleRepository` does not answer
+  `Threads`), loading the classes in order until that one as before.
+- `EntityStore::without($condition, $work)`: a read with a scope lifted (`scope:trash`), as Doctrine's SQL filter
+  disabled for one query (lesringostars' `Subscribers::findOneByEmailIncludingTrashed()`).
+- Tests: `Harness\BackendWrittenParityTest`, `Site\BackendWrittenParityTest`, `Site\AppRepositoriesParityTest`
+  (`Support\BackendWrittenParity`); RepositoriesTest runs the 14 on SQLite.
+
 ### Fixed: what the twin and lesringostars showed in eloquent mode (omnisense/omnibase's plan "omnibase agnostic", steps F7d-2, F7d-3)
 
 - `FinderQuery` is omnibase's `Base\Service\Model\Pages`: `count()` the entities once each, `slice()` a page of

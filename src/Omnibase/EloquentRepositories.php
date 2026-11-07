@@ -62,6 +62,9 @@ final class EloquentRepositories implements Repositories
     /** @var array<class-string, class-string<EloquentEntities<object>>> */
     private array $classes;
 
+    /** @var array<class-string, \Closure(EntityStore, class-string, ?EloquentUnitOfWork): EloquentEntities<object>> by repository class */
+    private array $factories = [];
+
     /** @param array<class-string, class-string<EloquentEntities<object>>> $classes an application's repositories by entity, over the core's */
     public function __construct(private readonly EntityStore $store, array $classes = [], private readonly ?EloquentUnitOfWork $unitOfWork = null)
     {
@@ -70,23 +73,37 @@ final class EloquentRepositories implements Repositories
 
     /**
      * An application's repository for an entity and its subclasses (its own class extending EloquentEntities, or one of
-     * the core's repositories), in place of the core's or the plain one.
+     * the core's repositories), in place of the core's or the plain one. $factory makes it when it needs more than
+     * the store, the class and the unit of work (a cache: lesringostars' comments' counts), given those three.
      *
-     * @param class-string                            $entity
-     * @param class-string<EloquentEntities<object>> $repository
+     * @param class-string                                                                                 $entity
+     * @param class-string<EloquentEntities<object>>                                                      $repository
+     * @param (\Closure(EntityStore, class-string, ?EloquentUnitOfWork): EloquentEntities<object>)|null $factory
      */
-    public function register(string $entity, string $repository): void
+    public function register(string $entity, string $repository, ?\Closure $factory = null): void
     {
         if (!is_a($repository, EloquentEntities::class, true)) {
             throw new \InvalidArgumentException(sprintf('%s is no repository on the store (EloquentEntities).', $repository));
         }
         $this->classes = [$entity => $repository] + $this->classes;
+        if (null !== $factory) {
+            $this->factories[$repository] = $factory;
+        }
         $this->repositories = [];
     }
 
     public function of(string $class): Entities
     {
-        return $this->repositories[$class] ??= new ($this->repositoryClass($class))($this->store, $class, $this->unitOfWork);
+        if (isset($this->repositories[$class])) {
+            return $this->repositories[$class];
+        }
+        $repository = $this->repositoryClass($class);
+        $made = isset($this->factories[$repository]) ? ($this->factories[$repository])($this->store, $class, $this->unitOfWork) : new $repository($this->store, $class, $this->unitOfWork);
+        if (!$made instanceof $repository) {
+            throw new \LogicException(sprintf('The factory of %s made a %s.', $repository, get_debug_type($made)));
+        }
+
+        return $this->repositories[$class] = $made;
     }
 
     /**
@@ -103,18 +120,44 @@ final class EloquentRepositories implements Repositories
      */
     public function implementing(string $interface, ?string $class = null): Entities
     {
+        // The repository that declares the interface before one that has it from its parent: an application's
+        // ArticleRepository (Articles, a Threads) registered ahead of the core's does not answer Threads. Classes are
+        // loaded in order until that one, as before.
+        $inherited = null;
         foreach ($this->classes as $entity => $repository) {
-            if (is_a($repository, $interface, true)) {
-                $repository = $this->of($class ?? $entity);
-                if (!$repository instanceof $interface) {
-                    throw new \LogicException(sprintf('The repository of %s (%s) does not implement %s.', $class ?? $entity, $repository::class, $interface));
-                }
-
-                return $repository;
+            if (!is_a($repository, $interface, true)) {
+                continue;
             }
+            $parent = get_parent_class($repository);
+            if (false !== $parent && is_a($parent, $interface, true)) {
+                $inherited ??= $entity;
+                continue;
+            }
+
+            return $this->implementedBy($interface, $class ?? $entity);
+        }
+        if (null !== $inherited) {
+            return $this->implementedBy($interface, $class ?? $inherited);
         }
 
         throw new \OutOfBoundsException(sprintf('No repository on Eloquent implements %s.', $interface));
+    }
+
+    /**
+     * @template T of Entities
+     *
+     * @param class-string<T> $interface
+     *
+     * @return T
+     */
+    private function implementedBy(string $interface, string $class): Entities
+    {
+        $repository = $this->of($class);
+        if (!$repository instanceof $interface) {
+            throw new \LogicException(sprintf('The repository of %s (%s) does not implement %s.', $class, $repository::class, $interface));
+        }
+
+        return $repository;
     }
 
     /** @return class-string<EloquentEntities<object>> the repository of a class: its own, else its nearest parent's, else the plain one */
