@@ -116,7 +116,7 @@ exist and the made-up values stay plain.
   what is random by its shape, a password hash by the password it verifies, a sealed value by what it opens to, an
   upload by its content. Timestamp, Blameable and the trash; Slugify and GenerateUuid; Randomize and Cache;
   OrderColumn and the revisions; Hashify; Vault; the passkeys' records; Uploader (its files removed after: a scratch
-  directory). Report: `var/eloquent-write-parity-harness.json`.
+  directory); orphan removal's cascade (an account removed with its connections). Report: `var/eloquent-write-parity-harness.json`.
 
   ```sh
   docker compose -f compose.yml -f compose.checkouts.yml -f compose.eloquent.yml run --rm omnibase \

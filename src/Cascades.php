@@ -39,10 +39,18 @@ final class Cascades
         $this->resolved = [];
     }
 
-    /** Whether the operation ("persist", "remove", "refresh"...) goes on to the association's entities. */
+    /**
+     * Whether the operation ("persist", "remove", "refresh"...) goes on to the association's entities. Orphan removal
+     * on a one-to-many or one-to-one association implies the removal's cascade, as Doctrine completes such a mapping
+     * (isCascadeRemove): the owner removed, its entities go with it - User::$connections (orphanRemoval, no cascade)
+     * left its userConnection rows, and the user's own delete failed on their foreign key.
+     */
     public function cascades(string $class, Relation $relation, string $operation): bool
     {
-        $cascade = $this->resolve($class, $relation)[0];
+        [$cascade, $orphanRemoval] = $this->resolve($class, $relation);
+        if ('remove' === $operation && $orphanRemoval && \in_array($relation->kind, [Relation::ONE_TO_MANY, Relation::ONE_TO_ONE], true)) {
+            return true;
+        }
 
         return \in_array($operation, $cascade, true) || \in_array('all', $cascade, true);
     }

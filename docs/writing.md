@@ -24,7 +24,9 @@ $unitOfWork->flush();
   entity scheduled for deletion (`PreRemove`). A new entity removed is no longer inserted.
 - The cascades are the mapping attribute's `cascade` and `orphanRemoval` (`Cascades`, through omnisense/omnibridge's
   declaration reader: no ORM loaded); omnibase's `#[Cascade]` and `#[OrphanRemoval]` are read as well
-  (`Omnibase\OmnibaseCascades`, added by `EloquentPersistence`).
+  (`Omnibase\OmnibaseCascades`, added by `EloquentPersistence`). Orphan removal on a one-to-many or one-to-one
+  implies the removal's cascade, as Doctrine completes the mapping: an owner removed takes the association's entities
+  with it (omnibase's `User::$connections`).
 
 ## flush()
 

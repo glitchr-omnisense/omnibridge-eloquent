@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed: what lesringostars' full run showed on eloquent (omnisense/omnibase's plan "omnibase agnostic", step F7f-3)
+
+- `Cascades::cascades()`: orphan removal on a one-to-many or one-to-one association implies the removal's cascade, as
+  Doctrine completes such a mapping (`isCascadeRemove`). An account removed left its browsers' connections
+  (`User::$connections`: `orphanRemoval`, no `cascade` declared), and on MySQL its own delete failed on their foreign
+  key. Harness `WriteParityTest::testAnAccountRemovedTakesItsConnections` (the same rows as Doctrine's; it failed
+  before).
+- `EloquentBackend::supports(Backend::TRANSACTIONS)` is true, as its docblock said since the writes (F7c):
+  `transactional()`, the flush's transaction and the row locks.
+
 ### Added: the methods no finder compiles, an application's repositories (omnisense/omnibase's plan "omnibase agnostic", step F7f)
 
 - The 14 methods the core declares `#[BackendOnly]` run on Eloquent's connection instead of being refused: `PageViews`

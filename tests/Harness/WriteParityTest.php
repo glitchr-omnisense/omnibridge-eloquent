@@ -34,7 +34,8 @@ use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
  * type), Uploader (a page's thumbnail, on a scratch directory emptied after), Vault (a secured setting), Cache (a
  * cached entity written), OrderColumn (a reorder), GenerateUuid and Randomize (a thread's uuid, a short link's
  * random slug), Hashify (a user's password), the trash (a removal turned into a trash entry, then a purge) and the
- * versions (a thread's revision). Countify is lesringostars' (tests/Site).
+ * versions (a thread's revision), orphan removal's cascade (an account removed with its connections). Countify is
+ * lesringostars' (tests/Site).
  *
  *     docker compose -f compose.yml -f compose.checkouts.yml -f compose.eloquent.yml run --rm omnibase \
  *         test --filter WriteParityTest /srv/omnibridge/eloquent/tests/Harness/WriteParityTest.php
@@ -176,6 +177,35 @@ final class WriteParityTest extends KernelTestCase
             $user->setEmail('parity2@example.org');
             $unitOfWork->flush();
         }, ['App\\Entity\\User'], ['passwords' => ['a parity password', 'another parity password']]);
+    }
+
+    /**
+     * Orphan removal implies the removal's cascade, as Doctrine completes the mapping: an account removed takes its
+     * browsers' connections (User::$connections: orphanRemoval, no cascade declared) - the collection never read,
+     * read for the removal. On Eloquent the userConnection rows stayed, and on MySQL the account's delete failed on
+     * their foreign key (the core's demo and sign-in tests in a site on eloquent, step F7f).
+     */
+    public function testAnAccountRemovedTakesItsConnections(): void
+    {
+        $this->compare('orphan removal, the removal\'s cascade', function (UnitOfWork $unitOfWork, \Closure $find, \Closure $clear): void {
+            $class = 'App\\Entity\\User';
+            $users = [];
+            foreach (['kept', 'gone'] as $name) {
+                $user = new $class();
+                if (method_exists($user, 'setUsername')) {
+                    $user->setUsername('parity-'.$name);
+                }
+                $user->setEmail('parity-'.$name.'@example.org');
+                $user->setPlainPassword('a parity password');
+                $unitOfWork->persist($user);
+                $unitOfWork->persist(new \Base\Entity\User\Connection('parity-'.$name, $user));
+                $users[$name] = $user;
+            }
+            $unitOfWork->flush();
+            $clear();
+            $unitOfWork->remove($find($class, $users['gone']->getId()));
+            $unitOfWork->flush();
+        }, ['App\\Entity\\User', \Base\Entity\User\Connection::class], ['passwords' => ['a parity password']]);
     }
 
     public function testVault(): void

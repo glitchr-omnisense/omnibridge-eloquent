@@ -100,6 +100,7 @@ final class OmnibasePartTest extends TestCase
         }]);
         self::assertSame('eloquent', $backend->name());
         self::assertTrue($backend->supports(Backend::LAZY_ASSOCIATIONS));
+        self::assertTrue($backend->supports(Backend::TRANSACTIONS));
         self::assertFalse($backend->supports(Backend::SECOND_LEVEL_CACHE));
         $backend->enableScope('not-bob');
         self::assertTrue($backend->isScopeEnabled('not-bob'));

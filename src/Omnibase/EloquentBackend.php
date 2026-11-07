@@ -14,7 +14,7 @@ use Omnibridge\Persistence\UnitOfWork;
 /**
  * omnisense/omnibridge's Backend on omnibridge/eloquent (plan "omnibase agnostic", step F7b): the name
  * "eloquent", what it can do (lazy associations: ghosts and lazy collections; no second-level or result cache;
- * transactions with the writes, at F7c), its unit of work, and omnibase's scopes - the trash and the vault -
+ * transactions, with the writes since F7c), its unit of work, and omnibase's scopes - the trash and the vault -
  * added to every query of the store while they are enabled, as Doctrine's TrashFilter and VaultFilter are: a
  * scope's criteria (Scope::criteria()) on the entity's columns, `deletedAt IS NULL`, `vault IS NULL OR vault = :environment`
  * - in the class's own query, and in the ON of a join of it (the finder's), as Doctrine puts its filters there.
@@ -40,7 +40,8 @@ final class EloquentBackend implements Backend
 
     public function supports(string $feature): bool
     {
-        return self::LAZY_ASSOCIATIONS === $feature;
+        // Transactions since the writes (F7c: transactional(), the flush's own, the row locks) - said at step F7f.
+        return \in_array($feature, [self::LAZY_ASSOCIATIONS, self::TRANSACTIONS], true);
     }
 
     public function unitOfWork(): UnitOfWork
