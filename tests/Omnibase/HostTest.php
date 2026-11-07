@@ -170,6 +170,45 @@ final class HostTest extends TestCase
         self::assertSame(1, $dispatchersRead, 'and once');
     }
 
+    /**
+     * The listeners a host's packages declare (omnisense/omnibridge's Lifecycle\Listeners, step B2): made at the first
+     * event, then handed every event of a write - persisted, removed, the flushes - with the entity and the unit of work.
+     */
+    public function testThePackagesListenersHearEveryWrite(): void
+    {
+        $heard = [];
+        $made = 0;
+        $listener = static function (object $event) use (&$heard): void {
+            if ($event instanceof \Omnibridge\Persistence\Lifecycle\PostLoad) {
+                return;
+            }
+            $heard[] = (new \ReflectionClass($event))->getShortName().($event instanceof \Omnibridge\Persistence\Lifecycle\EntityEvent ? ' '.$event->unitOfWork->identifier($event->entity) : '');
+        };
+        $persistence = EloquentPersistence::create(Connections::pdo($this->pdo), ['project_dir' => sys_get_temp_dir(), 'listeners' => static function () use ($listener, &$made): iterable {
+            ++$made;
+
+            return [$listener];
+        }], $this->description);
+        self::assertSame(0, $made, 'nothing made with the persistence');
+
+        $bob = new User('bob@example.org');
+        $persistence->unitOfWork()->persist($bob);
+        $persistence->unitOfWork()->flush();
+        $id = $persistence->unitOfWork()->identifier($bob);
+        $persistence->unitOfWork()->remove($bob);
+        $persistence->unitOfWork()->flush();
+
+        self::assertSame(1, $made);
+        self::assertSame(['PrePersist ', 'PreFlush', 'OnFlush', 'PostPersist '.$id, 'PostFlush', 'PreRemove '.$id, 'PreFlush', 'OnFlush', 'PostRemove ', 'PostFlush'], $heard, 'the identifier forgotten after the removal, as Doctrine does: a listener takes it at PreRemove');
+    }
+
+    public function testListenersThatAreNoListIsRefused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('The option "listeners" is a string');
+        EloquentPersistence::create(Connections::pdo($this->pdo), ['project_dir' => sys_get_temp_dir(), 'listeners' => 'typesense'], $this->description);
+    }
+
     public function testResetForgetsWhatTheUnitOfWorkHeld(): void
     {
         $persistence = EloquentPersistence::host(Connections::pdo($this->pdo), self::none(), ['project_dir' => sys_get_temp_dir()], $this->description);

@@ -16,6 +16,7 @@ use Omnibridge\Eloquent\UnsupportedPersistence;
 use Omnibridge\Schema\Description;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
+use Omnibridge\Persistence\Lifecycle\Listeners;
 
 /**
  * omnibase's entities on an Eloquent connection, in one call (plan "omnibase agnostic", step F7b): the
@@ -29,8 +30,9 @@ use Psr\EventDispatcher\EventDispatcherInterface;
  * Options: EntitySchema's (project_dir, enumerations, types, resolve_target_entities, rules, column_types),
  * `directories` (more entity folders, a bundle's), `repositories` (an application's repositories on the store, by
  * entity: EloquentRepositories::register()) and `dispatcher` (the host's PSR-14 dispatcher, given the unit of work's
- * Lifecycle events) and `lifecycle` (omnibase's behaviours and listeners on the unit of work: OmnibaseListeners'
- * options, step F7c). The associations cascade as their mapping and omnibase's #[Cascade] and #[OrphanRemoval] say
+ * Lifecycle events), `lifecycle` (omnibase's behaviours and listeners on the unit of work: OmnibaseListeners'
+ * options, step F7c) and `listeners` (the host's packages' listeners of those events, omnisense/omnibridge's
+ * Lifecycle\Listeners: an iterable or a closure of callables, made at the first event, called after omnibase's - step B2). The associations cascade as their mapping and omnibase's #[Cascade] and #[OrphanRemoval] say
  * (OmnibaseCascades). The behaviours' parts are registered for the unit of work (EloquentBehaviours).
  */
 final class EloquentPersistence
@@ -64,6 +66,14 @@ final class EloquentPersistence
         EloquentBehaviours::remember($persistence);
         if (\is_array($options['lifecycle'] ?? null)) {
             $persistence->lifecycle = OmnibaseListeners::attach($unitOfWork, $options['lifecycle']);
+        }
+        // The listeners the host's packages declare (omnisense/omnibridge's Lifecycle\Listeners, step B2), after
+        // omnibase's behaviours: made at the first event.
+        if (null !== ($options['listeners'] ?? null)) {
+            if (!is_iterable($options['listeners']) && !$options['listeners'] instanceof \Closure) {
+                throw new \InvalidArgumentException(sprintf('The option "listeners" is a %s, neither an iterable nor a closure of the lifecycle listeners.', get_debug_type($options['listeners'])));
+            }
+            $unitOfWork->listen(Listeners::chain($options['listeners']));
         }
 
         return $persistence;
@@ -174,6 +184,8 @@ final class EloquentPersistence
         $persistence = self::host($connection, $services, [
             'project_dir' => $parameter('kernel.project_dir', getcwd()),
             'lifecycle' => $lifecycle,
+            // The packages' listeners of the Lifecycle events (step B2), where the container has tags.
+            'listeners' => method_exists($container, 'tagged') ? static fn (): iterable => $container->tagged(Listeners::TAG) : null,
         ], $description);
         // The two scopes the hosts enable, as omnibase's Doctrine mapping enables its filters: the trash, and the vault
         // for the environment (kernel.environment, prod by default).

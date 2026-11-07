@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added: the host's packages hear the writes (omnisense/omnibase's plan "omnibase agnostic", step B2)
+
+- `EloquentPersistence::create()`'s option `listeners`: the listeners of the Lifecycle events a host's packages declare
+  (omnisense/omnibridge's `Lifecycle\Listeners`, the tag `omnibridge.lifecycle_listener`), an iterable or a closure of
+  callables, made at the first event and called after omnibase's behaviours. `fromContainer()` gives the plain
+  container's tagged services; omnibridge/symfony and omnibridge/laravel give theirs. glitchr/typesense-bundle's index
+  follows Eloquent's writes this way (it followed Doctrine's only). `HostTest`: every moment of a write heard, the
+  listeners made at the first event; anything else than a list refused.
+
 ### Fixed: what lesringostars' full run showed on eloquent (omnisense/omnibase's plan "omnibase agnostic", step F7f-3)
 
 - `Cascades::cascades()`: orphan removal on a one-to-many or one-to-one association implies the removal's cascade, as
