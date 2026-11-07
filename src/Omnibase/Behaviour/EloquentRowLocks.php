@@ -21,7 +21,9 @@ final class EloquentRowLocks implements RowLocks
         $store = $this->unitOfWork->store();
         $connection = $store->connection();
         $map = $store->mapping()->of($entity::class);
-        $connection->beginTransaction();
+        // Joined when the PDO is already in someone else's transaction (Doctrine's on a shared PDO; step F7d-3).
+        $own = !(0 === $connection->transactionLevel() && $connection->getPdo()->inTransaction());
+        $own && $connection->beginTransaction();
         try {
             $id = $store->identifier($entity);
             $query = $connection->table($map->tables[0]);
@@ -30,11 +32,11 @@ final class EloquentRowLocks implements RowLocks
             }
             $query->lockForUpdate()->selectRaw('1')->get();
             $result = $work();
-            $connection->commit();
+            $own && $connection->commit();
 
             return $result;
         } catch (\Throwable $e) {
-            $connection->rollBack();
+            $own && $connection->rollBack();
 
             throw $e;
         }

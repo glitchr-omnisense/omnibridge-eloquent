@@ -183,16 +183,16 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
     {
         $this->open();
         $connection = $this->store->connection();
-        $connection->beginTransaction();
+        $own = self::begin($connection);
         try {
             $result = $work($this);
             $this->flush();
-            $connection->commit();
+            $own && $connection->commit();
 
             return $result;
         } catch (\Throwable $failure) {
             $this->closed = true;
-            $connection->rollBack();
+            $own && $connection->rollBack();
 
             throw $failure;
         }
@@ -585,7 +585,7 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
         $this->dispatch(new Lifecycle\OnFlush($this));
 
         $connection = $this->store->connection();
-        $connection->beginTransaction();
+        $own = self::begin($connection);
         try {
             if ([] !== $this->insertions) {
                 $this->executeInserts();
@@ -602,16 +602,31 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
                 $this->persister->writeJoinRows($owner, $relation, $removed, $added, $all);
             }
             $deleted = [] !== $this->deletions ? $this->executeDeletions() : [];
-            $connection->commit();
+            $own && $connection->commit();
         } catch (\Throwable $failure) {
             $this->closed = true;
-            $connection->rollBack();
+            $own && $connection->rollBack();
 
             throw $failure;
         }
 
         $this->afterCommit($deleted);
         $this->dispatch(new Lifecycle\PostFlush($this));
+    }
+
+    /**
+     * A transaction begun on the connection, unless its PDO is already in one that someone else opened - Doctrine's,
+     * on the PDO a host shares (omnibridge/symfony's EloquentHost: one database, one transaction; step F7d-3): the
+     * writes then join it, and whoever opened it commits or rolls it back. Whether one was begun here.
+     */
+    private static function begin(\Illuminate\Database\Connection $connection): bool
+    {
+        if (0 === $connection->transactionLevel() && $connection->getPdo()->inTransaction()) {
+            return false;
+        }
+        $connection->beginTransaction();
+
+        return true;
     }
 
     private function computeChangeSets(): void

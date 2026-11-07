@@ -65,6 +65,28 @@ final class LazyCollection extends AbstractLazyCollection
     }
 
     /**
+     * As Doctrine's PersistentCollection::__sleep() keeps it (step F7d-3): the elements read so far - none but those
+     * added when it was never read -, no loader, so that an entity holding it serializes (a signed-in account kept in
+     * the session by Symfony's firewall). Unserialized, it is a collection read already, detached from the store.
+     *
+     * @return array{collection: \Doctrine\Common\Collections\Collection<TKey, T>, owning: bool}
+     */
+    public function __serialize(): array
+    {
+        return ['collection' => $this->isInitialized() ? $this->collection : new ArrayCollection($this->added), 'owning' => $this->owning];
+    }
+
+    /** @param array{collection: \Doctrine\Common\Collections\Collection<TKey, T>, owning?: bool} $data */
+    public function __unserialize(array $data): void
+    {
+        $this->loader = null;
+        $this->owning = (bool) ($data['owning'] ?? false);
+        $this->collection = $data['collection'];
+        $this->initialized = true;
+        $this->snapshot = $this->collection->toArray();
+    }
+
+    /**
      * The elements as read or last flushed (read now if the collection was not).
      *
      * @return array<TKey, T>

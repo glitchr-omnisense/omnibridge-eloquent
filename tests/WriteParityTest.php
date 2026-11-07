@@ -279,6 +279,22 @@ final class WriteParityTest extends TestCase
         }, false);
     }
 
+    /**
+     * A flush on a PDO that someone else already holds a transaction on (Doctrine's, where a host shares its PDO; step
+     * F7d-3) joins it: nothing begun nor committed here, the rows going with the outer transaction.
+     */
+    public function testAFlushJoinsATransactionTheSharedPdoIsAlreadyIn(): void
+    {
+        $table = $this->store->mapping()->of(User::class)->tables[0];
+        $this->eloquentPdo->beginTransaction();
+        $this->unitOfWork->persist(new User('joined@example.org'));
+        $this->unitOfWork->flush();
+        self::assertTrue($this->eloquentPdo->inTransaction(), 'the outer transaction still open');
+        self::assertSame(1, (int) $this->eloquentPdo->query("SELECT COUNT(*) FROM \"$table\" WHERE email = 'joined@example.org'")->fetchColumn());
+        $this->eloquentPdo->rollBack();
+        self::assertSame(0, (int) $this->eloquentPdo->query("SELECT COUNT(*) FROM \"$table\" WHERE email = 'joined@example.org'")->fetchColumn(), 'rolled back with it');
+    }
+
     public function testTheStatesAlongTheWayAreDoctrines(): void
     {
         $states = [];

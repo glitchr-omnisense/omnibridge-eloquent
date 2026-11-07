@@ -144,6 +144,20 @@ final class EntityStoreTest extends TestCase
         self::assertEqualsCanonicalizing(['Zanzibar', 'Avignon'], array_map(static fn (Thread $thread): string => $thread->getTitle(), $travel->getThreads()->toArray()));
     }
 
+    /** An entity read through the store serializes, as one Doctrine read does (a signed-in account in the session; step F7d-3). */
+    public function testAnEntityReadSerializesWithItsCollections(): void
+    {
+        $alice = $this->store->find(User::class, $this->ids[User::class][0]);
+        $article = $this->store->find(Thread::class, $this->ids[Article::class][0]);
+        $article->getTags()->toArray();
+
+        $copy = unserialize(serialize($alice));
+        self::assertSame([], $copy->getThreads()->toArray(), 'a collection never read: no element, as PersistentCollection::__sleep() keeps it');
+        $copy = unserialize(serialize($article));
+        self::assertEqualsCanonicalizing(['news', 'travel'], array_map(static fn (Tag $tag): string => $tag->getName(), $copy->getTags()->toArray()), 'one read: its elements');
+        self::assertFalse($copy->getTags()->isDirty());
+    }
+
     public function testASingleTableHierarchyReadsTheRowsClass(): void
     {
         [$cat] = $this->ids[Cat::class];

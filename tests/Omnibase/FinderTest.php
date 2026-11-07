@@ -90,6 +90,23 @@ final class FinderTest extends TestCase
         self::assertSame([], $this->titles($threads->findBy(['parent' => null])), 'null in a criteria array is `= NULL`, as omnibase\'s finder compares it: no row');
     }
 
+    /** A finder's query is omnibase's Pages (step F7d-2): what Paginator::paginate() pages through, each entity counted once. */
+    public function testAFindersQueryIsPagedThroughByOmnibasesPagination(): void
+    {
+        $threads = $this->threads();
+        $all = $threads->findByTitle([], [], ['id' => 'ASC']);
+        self::assertInstanceOf(\Base\Service\Model\Pages::class, $all);
+        self::assertSame(4, $all->count());
+        self::assertSame(['Two', 'three'], $this->titles($all->slice(1, 2)));
+        self::assertSame($all, \Base\Service\Model\Pagination::pages($all), 'Pages as they are');
+        // The tags' join table gives the first article two rows: one entity, counted once, and paged once.
+        $tagged = $threads->findByTags([$this->ids['red'], $this->ids['blue']], [], ['id' => 'ASC']);
+        self::assertSame(2, $tagged->count());
+        self::assertSame(['One_first'], $this->titles($tagged->slice(0, 1)));
+        self::assertSame(['Two'], $this->titles($tagged->slice(1, 5)));
+        self::assertSame([], $tagged->slice(2, 5));
+    }
+
     public function testTheAssociationsAreJoinedAndTheKeyIsNot(): void
     {
         $threads = $this->threads();

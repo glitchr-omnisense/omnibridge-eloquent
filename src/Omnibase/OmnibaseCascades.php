@@ -2,6 +2,7 @@
 
 namespace Omnibridge\Eloquent\Omnibase;
 
+use Base\Database\Attribute\Alias;
 use Base\Database\Attribute\Cascade;
 use Base\Database\Attribute\OrphanRemoval;
 use Base\Database\Entity\Extension\TranslatableInterface;
@@ -35,9 +36,18 @@ final class OmnibaseCascades
             }
             foreach ($classes as $current) {
                 $reflection = new \ReflectionClass($current);
-                $attributes = $reflection->hasProperty($property) && $reflection->getProperty($property)->getDeclaringClass()->getName() === $current
-                    ? array_map(static fn (\ReflectionAttribute $attribute): array => [$attribute, true], $reflection->getProperty($property)->getAttributes())
-                    : [];
+                // The property itself and, as omnibase's loadClassMetadata() resolves them, the properties of the class
+                // that are its #[Alias] (Gallery::$photos, #[Alias(column: "children")], #[OrphanRemoval]: the
+                // children's orphans removed - step F7d-2).
+                $aliases = self::aliasesOf($reflection, $property);
+                $attributes = [];
+                foreach ([$property, ...$aliases] as $name) {
+                    if ($reflection->hasProperty($name) && $reflection->getProperty($name)->getDeclaringClass()->getName() === $current) {
+                        foreach ($reflection->getProperty($name)->getAttributes() as $attribute) {
+                            $attributes[] = [$attribute, true];
+                        }
+                    }
+                }
                 foreach ($reflection->getAttributes() as $attribute) {
                     $attributes[] = [$attribute, false];
                 }
@@ -47,7 +57,7 @@ final class OmnibaseCascades
                     }
                     $arguments = $attribute->getArguments();
                     $column = $arguments['column'] ?? $arguments[0] ?? '';
-                    if (!$onProperty && $column !== $property) {
+                    if (!$onProperty && $column !== $property && !\in_array($column, $aliases, true)) {
                         continue;
                     }
                     $value = $arguments['value'] ?? $arguments[1] ?? null;
@@ -61,5 +71,28 @@ final class OmnibaseCascades
 
             return [$cascade, $orphanRemoval];
         };
+    }
+
+    /**
+     * The properties a class declares as another's #[Alias] (Base\Database\Attribute\Alias, its `column`).
+     *
+     * @return list<string>
+     */
+    private static function aliasesOf(\ReflectionClass $reflection, string $property): array
+    {
+        $aliases = [];
+        foreach ($reflection->getProperties() as $candidate) {
+            if ($candidate->getDeclaringClass()->getName() !== $reflection->getName()) {
+                continue;
+            }
+            foreach ($candidate->getAttributes(Alias::class) as $alias) {
+                $arguments = $alias->getArguments();
+                if (($arguments['column'] ?? $arguments[0] ?? null) === $property) {
+                    $aliases[] = $candidate->getName();
+                }
+            }
+        }
+
+        return $aliases;
     }
 }

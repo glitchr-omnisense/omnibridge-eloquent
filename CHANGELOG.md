@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixed: what the twin and lesringostars showed in eloquent mode (omnisense/omnibase's plan "omnibase agnostic", steps F7d-2, F7d-3)
+
+- `FinderQuery` is omnibase's `Base\Service\Model\Pages`: `count()` the entities once each, `slice()` a page of
+  entities in the query's order (the identifiers first when a join repeats an entity) - what Paginator::paginate()
+  takes (a records picker's pages, RemoteSearch: a TypeError before).
+- `OmnibaseCascades` reads #[Cascade] and #[OrphanRemoval] on a property that is the association's #[Alias] too
+  (lesringostars' `Gallery::$photos`, the children): a photo left out of its gallery is removed (trashed), as on Doctrine.
+- `LazyCollection` serializes as Doctrine's PersistentCollection does (the elements read so far, no loader): an entity
+  read through the store goes into a session (Symfony's firewall keeps the account; "Serialization of 'Closure' is not
+  allowed" before).
+- A flush, `transactional()` and the row locks join a transaction the PDO is already in when someone else began it
+  (Doctrine's, on the PDO omnibridge/symfony shares): "There is already an active transaction" before.
+
 ### Added: the persistence of a host (omnisense/omnibase's plan "omnibase agnostic", step F7d)
 
 - `Container::definitions()`: the services omnisense/omnibridge's `Omnibridge\Container` adds when it runs on Eloquent

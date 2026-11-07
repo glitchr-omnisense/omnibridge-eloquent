@@ -2,6 +2,7 @@
 
 namespace Omnibridge\Eloquent\Tests\Omnibase;
 
+use Base\Database\Attribute\Alias;
 use Base\Database\Attribute\Cascade;
 use Base\Database\Attribute\OrphanRemoval;
 use Omnibridge\Eloquent\Cascades;
@@ -17,6 +18,14 @@ class CascadedThread extends Thread
     #[Cascade(value: ['persist'])]
     #[OrphanRemoval(value: false)]
     protected \Doctrine\Common\Collections\Collection $translations;
+}
+
+/** A property that is another's #[Alias] (lesringostars' Gallery::$photos, the children): its attributes are the association's. */
+class AliasedThread extends Thread
+{
+    #[Alias(column: 'tags')]
+    #[OrphanRemoval]
+    protected $labels;
 }
 
 /**
@@ -42,5 +51,7 @@ final class OmnibaseCascadesTest extends TestCase
         self::assertFalse($cascades->orphanRemoval(CascadedThread::class, $translations));
         self::assertTrue($cascades->orphanRemoval(CascadedThread::class, $tags), 'on the class, naming the property');
         self::assertTrue($cascades->orphanRemoval(Thread::class, $translations), 'the parent keeps its mapping');
+        self::assertTrue($cascades->orphanRemoval(AliasedThread::class, $tags), 'on a property that is the association\'s #[Alias] (step F7d-2)');
+        self::assertFalse($cascades->orphanRemoval(Thread::class, $tags));
     }
 }

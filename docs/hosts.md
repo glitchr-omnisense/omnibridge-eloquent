@@ -42,14 +42,24 @@ omnibridge/symfony registers the services when `base.persistence` is `eloquent`:
 DoctrineBundle is installed beside (one database, one transaction), else Capsule on DATABASE_URL; the entities are
 those DoctrineBundle maps (their folders, target entities, column types), else the core's and src/Entity. An `entity`
 user provider of security.yaml for the application's users (no `property`) becomes the users' repository on Eloquent.
-What still names Doctrine's services by their ids (doctrine.orm.entity_manager, a repository by its class) stays on
-Doctrine.
+The core's services name its repository interfaces, so they answer from Eloquent; the entities' UniqueEntity rules look
+an entity Eloquent read up through Eloquent. Eloquent and Doctrine share one PDO: a flush joins a transaction Doctrine
+began on it, and the connection lets the PDO go when the kernel shuts down. What still names Doctrine's services by
+their ids stays on Doctrine: the application's own repositories (`App\Repository\*`, until it gives them Eloquent
+implementations), the back office (EasyAdmin), the console commands named after Doctrine, what reads Doctrine's
+metadata only. The repository methods written for Doctrine alone (`#[BackendOnly]`: the analytics' native SQL,
+Redirections::hit()) are refused aloud: on Eloquent a page view is not counted (the refusal comes after the response,
+at kernel.terminate) and the back office's layout, which counts the unique views, answers 500.
 
 ## Laravel
 
 omnibridge/laravel answers the same contracts from Eloquent when config/base.php says so, on Laravel's own connection
 (`omnibridge.eloquent.connection`, else `omnibridge.doctrine.connection`, else the default one); the account's effects
-(the connections' tracker, the sign-in listeners, omniauth's stores) write through the unit of work chosen.
+(the connections' tracker, the sign-in listeners, omniauth's stores) write through the unit of work chosen. omnibase's
+entity manager is still made at boot, for the AttributeReader it registers; the crops and the push subscriptions are
+read through the core's interfaces. Neither unit of work is cleared between two requests one application serves (a
+test): a test that wants each request fresh clears the persistence chosen (`EloquentPersistence::reset()`), not only
+Doctrine's entity manager.
 
 ## Plain PHP
 
