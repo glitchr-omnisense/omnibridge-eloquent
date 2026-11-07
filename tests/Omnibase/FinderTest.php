@@ -3,8 +3,10 @@
 namespace Omnibridge\Eloquent\Tests\Omnibase;
 
 use Base\Database\Repository\Entities;
+use Base\Database\Repository\Finder\Criterion;
 use Base\Database\Repository\Finder\Group;
 use Base\Database\Repository\Finder\Key;
+use Base\Database\Repository\Finder\Parser;
 use Base\Database\Repository\UnsupportedQueryException;
 use Doctrine\DBAL\DriverManager;
 use Omnibridge\Doctrine\EntityManagers;
@@ -142,6 +144,16 @@ final class FinderTest extends TestCase
         self::assertSame(['One_first', 'three'], $this->titles($threads->findBy(['author' => $this->ids['alice'], Group::by('ParentNullOrTitleEqualTo', 'three')], ['id' => 'ASC'])));
         self::assertSame(['One_first', 'Two', 'three'], $this->titles($threads->findByTitleOrTitle('Two', 'three', [Group::by('ParentNullAndAuthorNotNull')], ['id' => 'ASC'])), 'a group joined by the call\'s separator');
         self::assertSame(3, $threads->count([Group::by('TitleStartingWithOrParentNotNull', 'One')]));
+
+        // A group built from its members (Group::of(), omnisense/omnibase 5.x, step B1b): the same compilation, nested,
+        // a key and the words of a group's name - the back office's search and filters.
+        if (method_exists(Group::class, 'of')) {
+            $search = Group::of(Parser::SEPARATOR_OR, Criterion::of('title', '%one%', Parser::OPTION_INSENSITIVE, Parser::OPTION_PARTIAL), Criterion::of('title', 'Two'));
+            self::assertSame(['One_first', 'Two'], $this->titles($threads->findBy([$search], ['id' => 'ASC'])));
+            self::assertSame(['Two'], $this->titles($threads->findBy([$search, Group::of(Parser::SEPARATOR_AND, Criterion::of('author', Key::of($this->ids['bob'])))], ['id' => 'ASC'])));
+            self::assertSame(['three', 'Four'], $this->titles($threads->findBy([Group::of(Parser::SEPARATOR_AND, Criterion::of('id', $this->ids['one'], Parser::OPTION_GREATER), Group::of(Parser::SEPARATOR_OR, Criterion::of('parent', Key::of($this->ids['one'])), Criterion::of('title', 'none')))], ['id' => 'ASC'])));
+            self::assertSame(2, $threads->count([Group::of(Parser::SEPARATOR_AND, Criterion::of('parent', null, Parser::OPTION_NULL))]));
+        }
     }
 
     public function testTheRequestsAndTheirShapes(): void

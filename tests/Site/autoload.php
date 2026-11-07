@@ -14,6 +14,13 @@ use Composer\Autoload\ClassLoader;
     $package = dirname(__DIR__, 2);
     $vendor = $package.'/vendor';
     if (class_exists(\Omnibridge\Eloquent\EntityStore::class, true) && class_exists(\Illuminate\Database\Connection::class, true)) {
+        // Installed by the application (its lock, since step F7): the tests' classes are not in its autoloader.
+        if (!class_exists(\Omnibridge\Eloquent\Tests\Support\FinderParity::class, true)) {
+            $loader = new ClassLoader();
+            $loader->setPsr4('Omnibridge\\Eloquent\\Tests\\', [$package.'/tests']);
+            $loader->register(false);
+        }
+
         return;
     }
     if (!is_file($vendor.'/composer/autoload_psr4.php')) {

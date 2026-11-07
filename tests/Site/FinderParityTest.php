@@ -120,6 +120,31 @@ final class FinderParityTest extends KernelTestCase
         self::assertGreaterThanOrEqual(60, \count($report));
     }
 
+    /**
+     * Groups built from their members (Group::of(), step B1b): what the back office's list asks.
+     *
+     * @return list<array{0: class-string, 1: string, 2: list<mixed>}>
+     */
+    private static function builtGroups(string $A, string $U, object $article, object $older): array
+    {
+        $G = \Base\Database\Repository\Finder\Group::class;
+        $C = \Base\Database\Repository\Finder\Criterion::class;
+        $P = \Base\Database\Repository\Finder\Parser::class;
+        $like = static fn (string $field, string $words) => $C::of($field, '%'.mb_strtolower($words).'%', $P::OPTION_INSENSITIVE, $P::OPTION_PARTIAL);
+
+        return [
+            [$A, 'findBy', [[$G::of($P::SEPARATOR_OR, $like('slug', 'A'), $like('slug', 'tour'))], ['id' => 'DESC'], 20, 20]],
+            [$A, 'count', [[$G::of($P::SEPARATOR_OR, $like('slug', 'a'), $like('slug', 'tour'))]]],
+            [$A, 'findBy', [[$G::of($P::SEPARATOR_AND, $C::of('state', \Base\Enum\ThreadState::PUBLISH)), $G::of($P::SEPARATOR_AND, $C::of('publishedAt', new \DateTimeImmutable('2024-01-01 00:00:00'), $P::OPTION_GREATER_EQUAL), $C::of('publishedAt', new \DateTimeImmutable('2025-12-31 23:59:59'), $P::OPTION_LOWER_EQUAL))], ['publishedAt' => 'DESC', 'id' => 'DESC'], 20]],
+            [$A, 'findBy', [[$G::of($P::SEPARATOR_AND, $C::of('parent', \Base\Database\Repository\Finder\Key::of((string) ($article->getParent()?->getId() ?? 0))))], ['id' => 'DESC']]],
+            [$A, 'findOneBy', [[$G::of($P::SEPARATOR_AND, $C::of('id', $older->getId(), $P::OPTION_GREATER))], ['id' => 'ASC']]],
+            [$A, 'findOneBy', [[$G::of($P::SEPARATOR_AND, $C::of('id', $article->getId(), $P::OPTION_LOWER))], ['id' => 'DESC']]],
+            [$U, 'findBy', [[$G::of($P::SEPARATOR_AND, $C::of('roles', '%ROLE_ADMIN%', $P::OPTION_PARTIAL))], ['id' => 'ASC']]],
+            [$U, 'findBy', [[$G::of($P::SEPARATOR_OR, $like('username', 'M'), $like('email', 'GMAIL'))], ['username' => 'ASC', 'id' => 'ASC'], 20]],
+            [$U, 'count', [[$G::of($P::SEPARATOR_AND, $C::of('id', 3, $P::OPTION_GREATER), $C::of('id', 9, $P::OPTION_NOT_EQUAL))]]],
+        ];
+    }
+
     /** @return array<string, array{0: \Closure(): mixed, 1: \Closure(): mixed, 2?: bool, 3?: string|null}> */
     private function wordScenarios(): array
     {
@@ -172,6 +197,8 @@ final class FinderParityTest extends KernelTestCase
             [$A, 'findBy', [[\Base\Database\Repository\Finder\Group::by('SlugStartingWithOrSlugStartingWith', substr($slug, 0, 2), 'z'), 'state' => $published], ['id' => 'ASC']]],
             [$A, 'findByStateOrState', [\Base\Enum\ThreadState::DRAFT, \Base\Enum\ThreadState::PUBLISH, [\Base\Database\Repository\Finder\Group::by('ParentNullAndPublishedAtNotNull')], ['id' => 'ASC']]],
             [$A, 'count', [[\Base\Database\Repository\Finder\Group::by('ParentNotNullOrStateEqualTo', \Base\Enum\ThreadState::DRAFT)]]],
+            // Groups built from their members (Group::of(), step B1b): the back office's search, filters and neighbour.
+            ...(method_exists(\Base\Database\Repository\Finder\Group::class, 'of') ? self::builtGroups($A, $U, $article, $older) : []),
             // The paths: through the parent, the tags, and the translations (the Translatable join).
             [$A, 'findBy', [['parent.slug' => $article->getParent()?->getSlug()], ['id' => 'ASC']]],
             [$A, 'findBy', [['tags.slug' => $article->getTags()->first() ? $article->getTags()->first()->getSlug() : 'none'], ['id' => 'ASC']]],

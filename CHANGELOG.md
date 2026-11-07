@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added: the back office's lists on both compilers (omnisense/omnibase's plan "omnibase agnostic", step B1b)
+
+- `tests/Site/AdminIndexParityTest`: every list of an application's omnibase/admin - its default order and second page,
+  each column as the order, a search, each filter with values of its own - read by the former query on Doctrine's
+  QueryBuilder, by the finder's criteria (`indexCriteria()`, `Group::of()`) through omnibridge/doctrine and through
+  omnibridge/eloquent (`RecordPage`), the neighbouring records too: on lesringostars 386 lists equal three ways (but the
+  16 equalities on a to-many association the former DQL refused, and the 17 filters all three refuse alike), 136
+  neighbours equal.
+- `FinderTest` and both `FinderParityTest`s (harness, site) read groups built from their members (`Group::of()`):
+  nested, a key, the comparisons, the dates, the neighbour by id. Nothing to compile anew: such a group is a group read.
+- `tests/Site/autoload.php` registers the tests' classes where the application installs the package (its lock, since
+  F7): the site's tests found no `Tests\Support` class.
+
 ### Added: the host's packages hear the writes (omnisense/omnibase's plan "omnibase agnostic", step B2)
 
 - `EloquentPersistence::create()`'s option `listeners`: the listeners of the Lifecycle events a host's packages declare

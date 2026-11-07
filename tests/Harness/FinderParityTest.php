@@ -5,6 +5,8 @@ namespace Omnibridge\Eloquent\Tests\Harness;
 require_once \dirname(__DIR__).'/Site/autoload.php';
 
 use Base\Database\Repository\Finder\Group;
+use Base\Database\Repository\Finder\Parser;
+use Base\Database\Repository\Finder\Criterion;
 use Base\Database\Repository\Finder\Key;
 use Base\Database\Repository\UnsupportedQueryException;
 use Base\Entity\Layout\ImageCrop;
@@ -259,6 +261,16 @@ final class FinderParityTest extends KernelTestCase
             [Thread::class, 'findBy', [[Group::by('SlugStartingWithOrSlugStartingWith', 'al', 'de'), 'state' => ThreadState::PUBLISH], ['id' => 'ASC']]],
             [Thread::class, 'findByStateOrState', [ThreadState::DRAFT, ThreadState::PUBLISH, [Group::by('ParentNullAndPublishedAtNotNull')], ['id' => 'ASC']]],
             [Thread::class, 'count', [[Group::by('ParentNotNullOrStateEqualTo', ThreadState::DRAFT)]]],
+            // Groups built from their members (Group::of(), step B1b): the back office's search, filters and neighbour.
+            ...(method_exists(Group::class, 'of') ? [
+                [Thread::class, 'findBy', [[Group::of(Parser::SEPARATOR_OR, Criterion::of('title', '%ALP%', Parser::OPTION_INSENSITIVE, Parser::OPTION_PARTIAL), Criterion::of('slug', '%de%', Parser::OPTION_INSENSITIVE, Parser::OPTION_PARTIAL))], ['id' => 'ASC'], 2, 1]],
+                [Thread::class, 'count', [[Group::of(Parser::SEPARATOR_OR, Criterion::of('title', '%a%', Parser::OPTION_INSENSITIVE, Parser::OPTION_PARTIAL)), Group::of(Parser::SEPARATOR_AND, Criterion::of('state', ThreadState::PUBLISH))]]],
+                [Thread::class, 'findBy', [[Group::of(Parser::SEPARATOR_AND, Criterion::of('publishedAt', new \DateTimeImmutable('-60 days'), Parser::OPTION_GREATER_EQUAL), Criterion::of('publishedAt', new \DateTimeImmutable('+1 day'), Parser::OPTION_LOWER_EQUAL))], ['publishedAt' => 'DESC', 'id' => 'ASC']]],
+                [Thread::class, 'findBy', [[Group::of(Parser::SEPARATOR_AND, Criterion::of('parent', Key::of((string) $ids['alpha'])))], ['id' => 'DESC']]],
+                [Thread::class, 'findBy', [[Group::of(Parser::SEPARATOR_AND, Criterion::of('id', $ids['alpha'], Parser::OPTION_NOT_EQUAL), Group::of(Parser::SEPARATOR_OR, Criterion::of('state', ThreadState::DRAFT), Criterion::of('parent', null, Parser::OPTION_NOT_NULL)))], ['id' => 'ASC']]],
+                [Thread::class, 'findOneBy', [[Group::of(Parser::SEPARATOR_AND, Criterion::of('id', $ids['alpha'], Parser::OPTION_GREATER))], ['id' => 'ASC']]],
+                [Thread::class, 'findOneBy', [[Group::of(Parser::SEPARATOR_AND, Criterion::of('id', $ids['gamma'], Parser::OPTION_LOWER))], ['id' => 'DESC']]],
+            ] : []),
             [Thread::class, 'findBy', [['parent.slug' => $ids['slug']], ['id' => 'ASC']]],
             [Thread::class, 'findBy', [['tags.slug' => 'red'], ['id' => 'ASC']]],
             [Thread::class, 'findBy', [['state' => ThreadState::PUBLISH], ['parent.slug' => 'ASC', 'id' => 'DESC']]],
