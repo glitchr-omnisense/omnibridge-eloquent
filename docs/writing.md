@@ -56,8 +56,12 @@ In Doctrine's order (`UnitOfWork::commit()`):
      table's row (the tables a joined class adds go with it by their foreign key). The identifier the database gave is
      set back to null. `PostRemove` for each, once all are deleted.
 5. The snapshots taken again: a collection the application made becomes a `LazyCollection` holding the same elements
-   (Doctrine puts a `PersistentCollection` there); the deleted entities leave the collections that held them.
-   `PostFlush`.
+   (Doctrine puts a `PersistentCollection` there); the deleted entities leave the collections that held them. An
+   entity inserted or updated keeps, for its fields and to-one associations, what it held when its change set was
+   computed (or recomputed after `PreUpdate`), not what the `PostPersist`/`PostUpdate` listeners left: Doctrine's
+   original data. A change those listeners make (or `PostFlush`'s) is written by the next flush, as on Doctrine (seen
+   on lesringostars' sign-up: `User::$rolesPositions`, `[0]` when inserted, `[]` once the behaviours ran, is written
+   `[]` by the next flush on both). `PostFlush`.
 
 A flush that finds nothing to write dispatches `OnFlush` and `PostFlush` only. A flush that fails is rolled back and
 closes the unit of work (`UnsupportedPersistence::closed()`), as Doctrine closes its entity manager.

@@ -130,3 +130,35 @@ exist and the made-up values stay plain.
   their identifiers numbered per hierarchy. `tests/Site/ByIdParityTest` reads with the relay attached: the behaviours'
   PostLoad runs on both sides (User::$rolesPositions included, asserted).
 
+## An application's write flows on both backends (step F7c, third part)
+
+`tests/Site/FlowParityTest.php` runs lesringostars' write flows through the services its controllers call - omnibase's
+rules (`Registration`, `Verification`, `Passwords`, omniauth with omnibase's stores and the sign-in's listeners
+`TrackConnections`, `WarnNewDevice`, `UpdateAccount`, `Presence`), omnibase's neutral `FormProcessor` and
+`EntityHydrator` on the site's form definitions, the site's `CommentPosting`, `NewsletterSubscription`, newsletter
+actions and `SettingBag` -, each made with one backend's unit of work and repositories (`tests/Support/Site/FlowSide`:
+Doctrine's from the container, or this package's with omnibase's lifecycle, `OmnibaseHarness`; lesringostars' two App
+repositories the flows reach have test doubles on the finder, `EloquentSubscribers` and `EloquentDestinations`, until
+step F7f). No HTTP. The flows: the sign-up (form, registration, the verification link asked and followed, the
+approval, a password reset), the sign-in (a wrong password, the right one, a link from another browser, the presence),
+a comment and a reply, the newsletter's form twice, the trash (the newsletter left, then back) and a vaulted setting
+written and read, an article's tags (a many-to-many with an `#[OrderColumn]`), an account's links (cascaded, ordered,
+an orphan removed) and a gallery's photos reordered, a setting written.
+
+Every table is fingerprinted (`tests/Support/RowChanges`: the primary key and an MD5 of all the columns of each row)
+before the flow and after each of its steps; the rows inserted, updated and deleted are read from the difference, with
+the times written during the flow relative to its start and, in an inserted row, what is random by its kind (a
+password's hash, a token's value, a uuid, a comment's random slug, a vaulted value's cipher - its clear value is read
+back by the flow). Each backend runs in a process of its own on its own copy of the application's test database (one
+dump: the same rows and auto-increments, so identifiers compare as written), then the two records are compared, step by
+step and column by column, with what the flows read back (`var/eloquent-flows/report.json`). The Eloquent run counts
+any write through Doctrine (0 expected).
+
+```sh
+DOCTRINE_TEST_DATABASE=f7c3_doctrine OMNIBRIDGE_ELOQUENT_FLOWS=doctrine php bin/phpunit vendor/omnibridge/eloquent/tests/Site/FlowParityTest.php
+DOCTRINE_TEST_DATABASE=f7c3_eloquent OMNIBRIDGE_ELOQUENT_FLOWS=eloquent php bin/phpunit vendor/omnibridge/eloquent/tests/Site/FlowParityTest.php
+OMNIBRIDGE_ELOQUENT_FLOWS=compare php bin/phpunit vendor/omnibridge/eloquent/tests/Site/FlowParityTest.php
+```
+
+The flows write only to a database named `f7c3_*` (asserted). Doctrine's second-level cache is emptied with its
+identity map between steps, so that a read says what was written (Eloquent has none).

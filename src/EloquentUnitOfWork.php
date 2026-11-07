@@ -82,6 +82,13 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
     /** @var array<int, array{0: object, 1: string}> entities whose collections hold an entity this flush deletes */
     private array $visited = [];
 
+    /**
+     * @var array<int, array<string, mixed>> what an entity this flush inserted or updated held when its change set was
+     * computed (or recomputed after PreUpdate): its snapshot after the commit, as Doctrine keeps that as its original
+     * data - a change a PostPersist, PostUpdate or PostFlush listener makes is written by the next flush
+     */
+    private array $computed = [];
+
     /** @var array<int, true> entities whose row this flush wrote, to snapshot */
     private array $written = [];
 
@@ -840,6 +847,7 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
             if ([] !== $extra) {
                 $this->scheduleExtraUpdate($entity, $extra);
             }
+            $this->computed[$oid] = $this->store->original($entity);
             $this->written[$oid] = true;
             $inserted[] = $entity;
         }
@@ -869,6 +877,7 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
                 $this->persister->update($entity, $this->changeSets[$oid]);
             }
             unset($this->updates[$oid]);
+            $this->computed[$oid] = $this->store->original($entity);
             $this->written[$oid] = true;
             $this->dispatch(new Lifecycle\PostUpdate($entity, $this));
         }
@@ -970,8 +979,14 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
             }
             if (isset($this->written[$oid])) {
                 $this->store->snapshot($entity);
+                // Its fields and to-one associations as the change set took them, not as the Post* listeners left
+                // them (Doctrine's original data); its identifier the database's.
+                foreach ($this->computed[$oid] ?? [] as $property => $value) {
+                    $this->store->setOriginal($entity, $property, $value);
+                }
             }
         }
+        $this->computed = [];
     }
 
     /**
@@ -1055,5 +1070,6 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
         $this->notCascaded = [];
         $this->visited = [];
         $this->written = [];
+        $this->computed = [];
     }
 }

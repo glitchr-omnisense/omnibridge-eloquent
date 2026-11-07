@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added: lesringostars' write flows compared row by row (omnisense/omnibase's plan "omnibase agnostic", step F7c, third part)
+
+- `tests/Site/FlowParityTest`: seven flows of lesringostars (sign-up, sign-in, comment and reply, newsletter, trash and
+  vault, tags and ordered collections, settings) through the services its controllers call, once on Doctrine and once
+  on Eloquent, each on its copy of the test database; every table's rows compared step by step, column by column
+  (`tests/Support/RowChanges`, `tests/Support/Site/FlowSide`, the App repositories' test doubles
+  `EloquentSubscribers` and `EloquentDestinations`, `FlowAccess`, `CapturingSender`). See docs/testing.md.
+
+### Fixed
+
+- `EloquentUnitOfWork`: an entity inserted or updated keeps as its snapshot what it held when its change set was
+  computed (or recomputed after PreUpdate), not what PostPersist/PostUpdate listeners left - Doctrine's original data -,
+  so the next flush writes their changes as Doctrine's does. lesringostars' sign-up wrote `User::$rolesPositions` once
+  more on Doctrine (`[0]`, then `[]` at the next flush) than on Eloquent.
+
 ### Added: omnibase's behaviours on the unit of work (omnisense/omnibase's plan "omnibase agnostic", step F7c, second part)
 
 - `Omnibase\AttributeRelay`: omnibridge/doctrine's AttributeSubscriber on the unit of work's Lifecycle events, its
