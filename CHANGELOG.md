@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed: the entity dispatchers without doctrine/persistence (omnisense/omnibase's plan "omnibase agnostic", step B, leftover (a))
+
+`EntityDispatcherListener` gives a dispatcher on the core's neutral hooks (`persisting()`, `updating()`, `removing()`) the
+unit of work's own Lifecycle events (`AbstractEventDispatcher::lifecycle()`): the core's user.* and thread.* dispatchers
+run where doctrine/persistence is not installed. A dispatcher that still overrides a former hook typed on its
+`LifecycleEventArgs` (`AbstractEventDispatcher::formerHooks()`; every one under a core without `lifecycle()`) is called the
+former way, as before, and refused aloud without doctrine/persistence. `former()` says which way. doctrine/persistence's
+suggestion says so.
+
 ### Added: the enumerations known by their type's name (omnisense/omnibase's plan "omnibase agnostic", step B3)
 
 `OmnibaseCasts::create()` registers each enumeration it casts with omnisense/omnibase's `Base\Database\Type\Enumerations`,

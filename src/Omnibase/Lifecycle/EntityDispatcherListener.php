@@ -11,26 +11,35 @@ use Omnibridge\Persistence\Lifecycle;
 /**
  * omnibase's entity dispatchers on omnibridge/eloquent (plan "omnibase agnostic", step F7c): an AbstractEventDispatcher
  * (the user.* and thread.* events, an application's own: lesringostars' newsletter.*) called at the moments Doctrine
- * calls it - prePersist(), preUpdate(), preRemove() note the events, postPersist(), postUpdate(), postRemove() dispatch
- * them - with doctrine/persistence's LifecycleEventArgs, which their hooks are typed on, over the unit of work
- * (EloquentObjectManager; a PreUpdate's carry its changes, PreUpdateArgs). The dispatcher is made on the Eloquent
- * unit of work (its hydrator's snapshots are the store's); its pending flush is the host's, as under Doctrine
- * (AbstractEventDispatcher::live()). Without doctrine/persistence, refused aloud. A dispatcher overriding the
- * Doctrine-typed postFlush() is refused too: there is no PostFlushEventArgs to give it.
+ * calls it - before a write it notes its events, after it dispatches them.
+ *
+ * On the core's neutral hooks (persisting(), updating(), removing(); step B, leftover (a)) the dispatcher is given the
+ * unit of work's own Lifecycle events (AbstractEventDispatcher::lifecycle()): nothing of doctrine/persistence. One that
+ * still overrides a former hook typed on doctrine/persistence's LifecycleEventArgs (AbstractEventDispatcher::formerHooks(),
+ * or every dispatcher under a core without lifecycle()) is called the former way, with those arguments over the unit of
+ * work (EloquentObjectManager; a PreUpdate's carry its changes, PreUpdateArgs) - refused aloud without
+ * doctrine/persistence. The dispatcher is made on the Eloquent unit of work (its hydrator's snapshots are the store's);
+ * its pending flush is the host's, as under Doctrine (AbstractEventDispatcher::live()). A dispatcher overriding the
+ * Doctrine-typed postFlush() is refused: nothing calls it here, and its pending events are flushed by the host.
  */
 final class EntityDispatcherListener
 {
-    private readonly EloquentObjectManager $objectManager;
+    /** Whether the dispatcher is called the former way, with doctrine/persistence's LifecycleEventArgs. */
+    private readonly bool $former;
+
+    private readonly ?EloquentObjectManager $objectManager;
 
     public function __construct(private readonly AbstractEventDispatcher $dispatcher, EloquentUnitOfWork $unitOfWork)
     {
-        if (!class_exists(LifecycleEventArgs::class)) {
-            throw UnsupportedPersistence::operation(sprintf('run %s without doctrine/persistence', $dispatcher::class), 'omnibase\'s entity dispatchers take its LifecycleEventArgs (installed with omnibridge/doctrine)');
+        $former = method_exists(AbstractEventDispatcher::class, 'lifecycle') ? AbstractEventDispatcher::formerHooks($dispatcher) : ['a core without lifecycle(): onPersist'];
+        if ([] !== $former && !class_exists(LifecycleEventArgs::class)) {
+            throw UnsupportedPersistence::operation(sprintf('run %s without doctrine/persistence', $dispatcher::class), sprintf('it overrides %s(), typed on doctrine/persistence\'s LifecycleEventArgs: move it to the neutral hooks (persisting(), updating(), removing()) or install doctrine/persistence', implode('(), ', $former)));
         }
         if (AbstractEventDispatcher::class !== (new \ReflectionMethod($dispatcher, 'postFlush'))->getDeclaringClass()->getName()) {
             throw UnsupportedPersistence::operation(sprintf('%s::postFlush(), a Doctrine-typed hook', $dispatcher::class), 'its pending events are flushed by the host (flushPending())');
         }
-        $this->objectManager = new EloquentObjectManager($unitOfWork);
+        $this->former = [] !== $former;
+        $this->objectManager = $this->former ? new EloquentObjectManager($unitOfWork) : null;
     }
 
     public function dispatcher(): AbstractEventDispatcher
@@ -38,9 +47,20 @@ final class EntityDispatcherListener
         return $this->dispatcher;
     }
 
+    /** Whether the dispatcher is called with doctrine/persistence's LifecycleEventArgs (a former hook overridden). */
+    public function former(): bool
+    {
+        return $this->former;
+    }
+
     public function __invoke(object $event): void
     {
         if (!$event instanceof Lifecycle\EntityEvent) {
+            return;
+        }
+        if (!$this->former) {
+            $this->dispatcher->lifecycle($event);
+
             return;
         }
         match (true) {
