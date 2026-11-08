@@ -42,6 +42,12 @@ final class OmnibaseCasts
 
         foreach (EntitySchema::types($options) as $name => $enumeration) {
             if (is_subclass_of($enumeration, EnumType::class)) {
+                // The enumeration known by its type's name, as Doctrine's types register it (omnisense/omnibase's
+                // Enumerations: what reads a column's type to reach its enumeration, the mapping's getTargetClass()
+                // among them - plan "omnibase agnostic", steps E3 and B3, Doctrine not installed).
+                if (class_exists(\Base\Database\Type\Enumerations::class)) {
+                    \Base\Database\Type\Enumerations::register($name, $enumeration);
+                }
                 // A set reads NULL as no value ([]), as EnumTypeAdapter hands it to SetType::toPHPValue().
                 $casts = $casts->with($name, static fn (mixed $value): mixed => $enumeration::toPHPValue($value), static fn (mixed $value): mixed => $enumeration::toDatabaseValue($value), is_subclass_of($enumeration, SetType::class));
             }

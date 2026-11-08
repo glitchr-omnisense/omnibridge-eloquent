@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added: the enumerations known by their type's name (omnisense/omnibase's plan "omnibase agnostic", step B3)
+
+`OmnibaseCasts::create()` registers each enumeration it casts with omnisense/omnibase's `Base\Database\Type\Enumerations`,
+as Doctrine's types register them: the core's MetadataManipulator answers a field's enumeration (`getTargetClass()`)
+where Doctrine is not installed.
+
 ### Added: the back office's lists on both compilers (omnisense/omnibase's plan "omnibase agnostic", step B1b)
 
 - `tests/Site/AdminIndexParityTest`: every list of an application's omnibase/admin - its default order and second page,
