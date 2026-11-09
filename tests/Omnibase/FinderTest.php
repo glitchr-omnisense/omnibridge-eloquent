@@ -75,9 +75,14 @@ final class FinderTest extends TestCase
         self::assertSame(['One_first', 'Four'], $this->titles($threads->findByTitle(['One_first', 'Four', 'None'], [], ['id' => 'ASC'])));
         self::assertCount(4, $threads->findByTitle([])->getResult(), 'an empty list: no condition');
         self::assertSame(['One_first'], $this->titles($threads->findByTitleStartingWith('One')));
-        // The underscore escaped with a backslash, as omnibridge/doctrine escapes it: MySQL's LIKE reads the backslash as
-        // its escape, SQLite's has none (no ESCAPE clause), so "One_" finds nothing here - on both compilers alike.
-        self::assertSame([], $this->titles($threads->findByTitleStartingWith('One_')));
+        // The value read literally, as omnibridge/doctrine reads it: its "_" and "%" escaped with "!", which the LIKE names
+        // (ESCAPE '!'), on SQLite as on MySQL. They were escaped with a backslash and no ESCAPE clause, which MySQL
+        // reads and SQLite does not: "One_" found nothing here.
+        self::assertSame(['One_first'], $this->titles($threads->findByTitleStartingWith('One_')));
+        self::assertSame([], $this->titles($threads->findByTitleStartingWith('On_')), '"_" is an underscore, not any character');
+        self::assertSame([], $this->titles($threads->findByTitleStartingWith('One%')), '"%" is a percent sign');
+        self::assertSame(['One_first'], $this->titles($threads->findByTitleEndingWith('_first')));
+        self::assertSame(['Two', 'three', 'Four'], $this->titles($threads->findByTitleNotStartingWith('One_', [], ['id' => 'ASC'])));
         self::assertSame(['three'], $this->titles($threads->findByTitleEndingWith('ee')));
         self::assertSame(['One_first', 'Two', 'Four'], $this->titles($threads->findByTitleNotStartingWith('th', [], ['id' => 'ASC'])));
         self::assertSame(['three'], $this->titles($threads->findByInsensitiveTitleStartingWith('THR')));

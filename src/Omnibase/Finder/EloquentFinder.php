@@ -23,7 +23,7 @@ use Omnibridge\Schema\Relation;
  * - every word of a criterion: EqualTo (= or IN for a list, an empty list no condition), NotEqualTo, GreaterThan,
  *   GreaterEqualTo, LowerThan, LowerEqualTo; the dates YoungerThan, YoungerEqualTo, OlderThan, OlderEqualTo, Within
  *   (an age or an offset from now, to the minute), IsOver, IsNotOver; StartingWith, EndingWith and their Not (LIKE,
- *   the underscore escaped), Partial (LIKE as given), Insensitive (LOWER()), Null, Empty, True, False and their Not;
+ *   the value literal: "%", "_" and "!" escaped with "!", ESCAPE '!'), Partial (LIKE as given), Insensitive (LOWER()), Null, Empty, True, False and their Not;
  *   ClosestTo and FarestTo (ABS(x - value) ordering the rows); InstanceOf, ClassOf and their Not (the
  *   discriminator); But; WithRoute; Model (a Query-by-Example); a JSON field compared as Doctrine's JSON_CONTAINS();
  * - a criterion on a to-one or to-many association, or a path through one ("translatable.state"), through a LEFT
@@ -576,7 +576,9 @@ class EloquentFinder
         if ('json' === $this->subject->typeOf($fieldName, $this->store->mapping()->of(...))) {
             return $this->jsonExpression($fieldName, $fieldValue, $tableOperator, $isInsensitive, $isEmpty || $isNotEmpty);
         } elseif ($regexRequested) {
-            $fieldValue = str_replace(['_', '\%'], ['\_', '\%'], $fieldValue);
+            // A literal prefix or suffix: its "%", "_" and "!" escaped with "!", which the LIKE names (ESCAPE '!') - the same
+            // on every platform, where "_" was escaped as "\_" with no ESCAPE clause, which SQLite does not read.
+            $fieldValue = strtr((string) $fieldValue, ['!' => '!!', '%' => '!%', '_' => '!_']);
             $fieldValue = match ($tableOperator) {
                 Parser::OPTION_STARTING_WITH, Parser::OPTION_NOT_STARTING_WITH => $fieldValue.'%',
                 default => '%'.$fieldValue,
@@ -651,7 +653,7 @@ class EloquentFinder
 
             return Conditions::raw($sql().($not ? ' NOT IN (' : ' IN (').implode(', ', array_fill(0, \count($bound), '?')).')', $bound);
         } elseif ($regexRequested) {
-            $like = \in_array($tableOperator, [Parser::OPTION_STARTING_WITH, Parser::OPTION_ENDING_WITH], true) ? ' LIKE ?' : ' NOT LIKE ?';
+            $like = \in_array($tableOperator, [Parser::OPTION_STARTING_WITH, Parser::OPTION_ENDING_WITH], true) ? " LIKE ? ESCAPE '!'" : " NOT LIKE ? ESCAPE '!'";
 
             return Conditions::raw($sql().$like, [$bound]);
         } elseif ($closestTo || $farestTo) {

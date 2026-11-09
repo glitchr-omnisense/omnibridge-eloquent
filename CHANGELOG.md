@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed: StartingWith, EndingWith and their Not read their value literally (omnisense/omnibase's plan "omnibase agnostic", step S)
+
+`EloquentFinder` escaped a value's "_" as "\_" with no ESCAPE clause, as omnibridge/doctrine did: MySQL reads "\" as LIKE's
+default escape, SQLite has none, so on SQLite "One_" matched nothing, and a "%" in the value stayed a wildcard. Its "!", "%"
+and "_" are escaped with "!" and the LIKE says ESCAPE '!', as omnibridge/doctrine now does: both compilers still give the
+same rows. tests/Omnibase/FinderTest.
+
 ### Changed: the entity dispatchers without doctrine/persistence (omnisense/omnibase's plan "omnibase agnostic", step B, leftover (a))
 
 `EntityDispatcherListener` gives a dispatcher on the core's neutral hooks (`persisting()`, `updating()`, `removing()`) the
