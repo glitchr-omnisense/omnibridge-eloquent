@@ -1,0 +1,23 @@
+# PHPStan at the highest level, as the family's other packages. phpstan-baseline.neon lists the
+# violations there were when the CI first ran PHPStan here (2026-11-09): the debt left by the moves of
+# omnisense/omnibase's plan "omnibase agnostic", to be paid down gradually. The CI fails on any other;
+# fix one, then drop its entry.
+# tests/phpstan-bootstrap.php: the App\ classes omnibase's contracts name are the Base\ ones, aliased as at
+# run time (the core's own tests/phpstan-bootstrap.php does the same).
+includes:
+    - phpstan-baseline.neon
+
+parameters:
+    level: max
+    paths:
+        - src
+        - tests
+    # What runs only in the harness, against a site (docker/, compose.yml; phpunit.xml.dist leaves the same
+    # folders out): Symfony's KernelTestCase and the site's App\ classes are not in this package's install.
+    excludePaths:
+        - tests/Harness
+        - tests/Site
+        - tests/Support/Site
+    bootstrapFiles:
+        - tests/phpstan-bootstrap.php
+    reportUnmatchedIgnoredErrors: false
