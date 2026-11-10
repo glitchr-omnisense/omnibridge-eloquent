@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-10
+
 ### Fixed: StartingWith, EndingWith and their Not read their value literally (omnisense/omnibase's plan "omnibase agnostic", step S)
 
 `EloquentFinder` escaped a value's "_" as "\_" with no ESCAPE clause, as omnibridge/doctrine did: MySQL reads "\" as LIKE's
