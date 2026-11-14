@@ -22,7 +22,7 @@ use Base\Repository\User\Connections;
 use Base\Repository\User\Tokens;
 use Base\Repository\Users;
 use Base\Request\Rule\Presence;
-use Base\Routing\AdvancedRouterInterface;
+use Omnibridge\Symfony\Omnibase\Routing\AdvancedRouterInterface;
 use Base\Security\UserTracker;
 use Base\Service\LocalizerInterface;
 use Base\Service\ObfuscatorInterface;

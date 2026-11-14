@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-14
+
+### Changed: ready for omnisense/omnibase 6.0
+
+omnisense/omnibase 6.0 removes the entity dispatchers' former hooks typed on doctrine/persistence (`onPersist()`,
+`onUpdate()`, `onRemove()`, `dispatchEvents()`) and `AbstractEventDispatcher::formerHooks()` with them. `EntityDispatcherListener`
+asks `formerHooks()` only where the core has it: under 6.0 every dispatcher is given the unit of work's Lifecycle events
+(`lifecycle()`). Nothing changes under 5.x. The core 6.0 conflicts with omnibridge/eloquent < 1.1. tests/Site/FlowParityTest names
+`Omnibridge\Symfony\Omnibase\Routing\AdvancedRouterInterface`, the class 5.x aliased as `Base\Routing\AdvancedRouterInterface`.
+require-dev: `omnisense/omnibase` `5.x-dev || 6.x-dev`, `omnibridge/doctrine` `1.x-dev || 2.x-dev` (the suite runs on the newest served).
+
 ## [1.0.0] - 2026-11-10
 
 ### Fixed: StartingWith, EndingWith and their Not read their value literally (omnisense/omnibase's plan "omnibase agnostic", step S)

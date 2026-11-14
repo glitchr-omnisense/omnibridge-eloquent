@@ -23,8 +23,8 @@
         "omnisense/omnibridge": "^1.0"
     },
     "require-dev": {
-        "omnibridge/doctrine": "1.x-dev",
-        "omnisense/omnibase": "5.x-dev",
+        "omnibridge/doctrine": "1.x-dev || 2.x-dev",
+        "omnisense/omnibase": "5.x-dev || 6.x-dev",
         "phpunit/phpunit": "^11.5"
     },
     "suggest": {

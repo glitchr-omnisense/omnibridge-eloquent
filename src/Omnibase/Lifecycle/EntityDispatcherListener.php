@@ -15,7 +15,8 @@ use Omnibridge\Persistence\Lifecycle;
  *
  * On the core's neutral hooks (persisting(), updating(), removing(); step B, leftover (a)) the dispatcher is given the
  * unit of work's own Lifecycle events (AbstractEventDispatcher::lifecycle()): nothing of doctrine/persistence. One that
- * still overrides a former hook typed on doctrine/persistence's LifecycleEventArgs (AbstractEventDispatcher::formerHooks(),
+ * still overrides a former hook typed on doctrine/persistence's LifecycleEventArgs (AbstractEventDispatcher::formerHooks()
+ * under omnisense/omnibase 5.x; 6.0 has no former hook,
  * or every dispatcher under a core without lifecycle()) is called the former way, with those arguments over the unit of
  * work (EloquentObjectManager; a PreUpdate's carry its changes, PreUpdateArgs) - refused aloud without
  * doctrine/persistence. The dispatcher is made on the Eloquent unit of work (its hydrator's snapshots are the store's);
@@ -31,7 +32,13 @@ final class EntityDispatcherListener
 
     public function __construct(private readonly AbstractEventDispatcher $dispatcher, EloquentUnitOfWork $unitOfWork)
     {
-        $former = method_exists(AbstractEventDispatcher::class, 'lifecycle') ? AbstractEventDispatcher::formerHooks($dispatcher) : ['a core without lifecycle(): onPersist'];
+        // omnisense/omnibase 6.0 has no former hook any more (no formerHooks()): every dispatcher is on the neutral ones.
+        /** @var list<string> $former */
+        $former = match (true) {
+            !method_exists(AbstractEventDispatcher::class, 'lifecycle') => ['a core without lifecycle(): onPersist'],
+            method_exists(AbstractEventDispatcher::class, 'formerHooks') => AbstractEventDispatcher::formerHooks($dispatcher),
+            default => [],
+        };
         if ([] !== $former && !class_exists(LifecycleEventArgs::class)) {
             throw UnsupportedPersistence::operation(sprintf('run %s without doctrine/persistence', $dispatcher::class), sprintf('it overrides %s(), typed on doctrine/persistence\'s LifecycleEventArgs: move it to the neutral hooks (persisting(), updating(), removing()) or install doctrine/persistence', implode('(), ', $former)));
         }
