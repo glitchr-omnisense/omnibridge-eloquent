@@ -3,6 +3,7 @@
 namespace Omnibridge\Eloquent;
 
 use Doctrine\Common\Collections\Collection;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Omnibridge\Persistence\Lifecycle;
 use Omnibridge\Persistence\Snapshots;
 use Omnibridge\Persistence\UnitOfWork;
@@ -151,6 +152,15 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
         $this->flushing = true;
         try {
             $this->commit();
+        } catch (UniqueConstraintViolationException $failure) {
+            // omnisense/omnibase's neutral exception when the core is installed (named by string: this part of the
+            // package runs without it), the driver's kept as the previous one, as omnibridge/doctrine throws it.
+            $neutral = 'Base\\Database\\Exception\\UniqueConstraintViolation';
+            if (class_exists($neutral)) {
+                throw $neutral::from($failure);
+            }
+
+            throw $failure;
         } finally {
             $this->flushing = false;
             $this->cleanup();
@@ -436,6 +446,12 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
         $this->computed = $this->written = [];
         $this->closed = false;
         $this->store->clear();
+    }
+
+    /** Whether it can still write: false once a failed flush closed it, until clear(). */
+    public function isOpen(): bool
+    {
+        return !$this->closed;
     }
 
     /** Whether the entity is a lazy object not read yet (Doctrine's isUninitializedObject()). */

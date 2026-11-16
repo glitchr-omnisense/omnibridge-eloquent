@@ -69,7 +69,7 @@ Listening in Doctrine's order (priority, then declaration): the relay and `IntlL
 | ThreadSubscriber (prePersist, onFlush) | `ThreadListener`; the mentionees read again from the store (`StoreMentionees`) | `ThreadParticipants` |
 | SettingSubscriber | `SettingListener` | `SettingsInvalidation` |
 | TextOverrideCacheListener | `TextOverrideListener` | - |
-| the entity dispatchers (user.\*, thread.\*, an application's) | `EntityDispatcherListener`: doctrine/persistence's `LifecycleEventArgs` over an `EloquentObjectManager`, a PreUpdate's with its changes (`PreUpdateArgs`) | - |
+| the entity dispatchers (user.\*, thread.\*, an application's) | `EntityDispatcherListener`: the unit of work's Lifecycle events to the dispatcher's neutral hooks (`lifecycle()`: `persisting()`, `updating()`, `removing()`) | - |
 | UserSubscriber's preFlush | `PreFlushListener` | - |
 | DemoAccountLockSubscriber | `DemoAccountLockListener` | `DemoAccountLock` |
 
@@ -78,8 +78,7 @@ second-level cache: the store keeps none); TrackingPolicySubscriber, the listene
 `resolveDiscriminator` (Doctrine's mapping: the description is the store's; the translations' cascades are
 `OmnibaseCascades`'); IntlSubscriber's `onQuery` (the finder joins the translations itself). Refused aloud:
 ExtensionSubscriber's entries when an `EntityExtension` holds an extension (none is registered by omnibase, its bundles
-or lesringostars), an entity dispatcher overriding the Doctrine-typed `postFlush()`, the entity dispatchers without
-doctrine/persistence, `EloquentObjectManager`'s metadata and repositories.
+or lesringostars), an entity dispatcher overriding one of the Doctrine-typed hooks (`prePersist()` ... `postRemove()`, `postFlush()`).
 
 ## Known differences
 

@@ -6,6 +6,7 @@ use Base\Database\Attribute\Versionable;
 use Base\Database\Lifecycle\RevisionRecorder;
 use Base\Entity\Extension\Revision;
 use DateTime;
+use Base\Database\Type\Utc;
 use Omnibridge\Eloquent\EloquentUnitOfWork;
 use Omnibridge\Eloquent\LazyCollection;
 use Omnibridge\Eloquent\Omnibase\Behaviour\EloquentBulkDeletes;
@@ -86,7 +87,7 @@ final class VersionableListener
                 continue;
             }
             $unitOfWork->persist($revision);
-            $revision->setCreatedAt(new DateTime());
+            $revision->setCreatedAt(DateTime::createFromImmutable(Utc::now()));
             $unitOfWork->recompute($revision);
             $this->pending[spl_object_id($revision)] = $revision;
         }

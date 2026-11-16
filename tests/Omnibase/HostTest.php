@@ -15,10 +15,12 @@ use Omnibridge\Eloquent\Connections;
 use Omnibridge\Eloquent\Container as EloquentContainer;
 use Omnibridge\Eloquent\EloquentUnitOfWork;
 use Omnibridge\Eloquent\Omnibase\EloquentPersistence;
-use Omnibridge\Eloquent\Omnibase\EloquentRepositories;
+use Base\Database\Repository\EntityRepositories;
+use Base\Database\Repository\Finders;
+use Omnibridge\Eloquent\Omnibase\EloquentFinders;
 use Omnibridge\Eloquent\Omnibase\Lifecycle\EntityDispatchersListener;
-use Omnibridge\Eloquent\Omnibase\Repository\Thread\TagRepository;
-use Omnibridge\Eloquent\Omnibase\Repository\UserRepository;
+use Base\Repository\Thread\TagRepository;
+use Base\Repository\UserRepository;
 use Omnibridge\Eloquent\Tests\Fixtures\Entity\Article;
 use Omnibridge\Eloquent\Tests\Fixtures\Entity\Page;
 use Omnibridge\Eloquent\Tests\Fixtures\Entity\Profile;
@@ -103,7 +105,8 @@ final class HostTest extends TestCase
         self::assertSame($unitOfWork, $container->get(Snapshots::class));
         self::assertSame($unitOfWork, $container->get(EloquentPersistence::class)->unitOfWork());
         self::assertSame('eloquent', $container->get(Backend::class)->name());
-        self::assertInstanceOf(EloquentRepositories::class, $container->get(Repositories::class));
+        self::assertInstanceOf(EntityRepositories::class, $container->get(Repositories::class));
+        self::assertInstanceOf(EloquentFinders::class, $container->get(Finders::class));
         self::assertInstanceOf(UserRepository::class, $container->get(Users::class));
         self::assertInstanceOf(TagRepository::class, $container->get(Tags::class));
         self::assertArrayNotHasKey(Repositories::class, EloquentContainer::interfaces());
@@ -227,17 +230,11 @@ final class HostTest extends TestCase
 
     public function testTheUsersRepositoryIsSecuritysLoaderAndProvider(): void
     {
-        self::assertTrue(is_a(UserRepository::class, SecurityUserLoader::class, true));
-        self::assertTrue(is_a(UserRepository::class, SecurityUserProvider::class, true));
-        self::assertTrue(is_a(UserRepository::class, Users::class, true));
-        // The same contract as omnibridge/doctrine's: what a site's security.yaml and omnibridge/symfony's UserProvider ask.
+        self::assertContains(SecurityUserLoader::class, class_implements(UserRepository::class));
+        self::assertContains(SecurityUserProvider::class, class_implements(UserRepository::class));
+        self::assertContains(Users::class, class_implements(UserRepository::class));
         foreach (['supportsClass', 'loadUserByIdentifier', 'refreshUser', 'upgradePassword'] as $method) {
             self::assertTrue(method_exists(UserRepository::class, $method), $method);
-            self::assertSame(
-                (string) (new \ReflectionMethod(\Omnibridge\Doctrine\Omnibase\Repository\UserRepository::class, $method))->getReturnType(),
-                (string) (new \ReflectionMethod(UserRepository::class, $method))->getReturnType(),
-                $method,
-            );
         }
     }
 }

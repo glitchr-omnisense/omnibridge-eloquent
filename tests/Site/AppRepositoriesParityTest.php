@@ -4,7 +4,11 @@ namespace Omnibridge\Eloquent\Tests\Site;
 
 require_once __DIR__.'/autoload.php';
 
+use Base\Database\Repository\EntityRepositories;
+use Base\Database\Repository\Finders;
+use Base\Repository\Aliases;
 use Doctrine\ORM\EntityManagerInterface;
+use Omnibridge\Doctrine\Omnibase\DoctrineFinders;
 use Omnibridge\Eloquent\Omnibase\EloquentPersistence;
 use Omnibridge\Eloquent\Tests\Support\FinderParity;
 use Omnibridge\Eloquent\Tests\Support\OmnibaseHarness;
@@ -12,18 +16,31 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 
 /**
- * lesringostars' own repositories on both backends (omnisense/omnibase's plan "omnibase agnostic", step F7f): each
- * method of its eleven App\Repository interfaces - and the accounts' provider, by address and by name - asked of
- * its Doctrine repository (App\Repository\*) and of its Eloquent one (App\Persistence\Eloquent\*, registered as
- * base.persistence: eloquent registers them), on the site's database: the same answers (FinderParity's
- * outcomes). Reads only. The comments' counts each on a cache of their own, so neither answers from the other's.
+ * lesringostars' own repositories on both backends: each method of its eleven App\Repository interfaces - and the
+ * accounts' provider, by address and by name - asked of the SAME repository class (App\Repository\*, agnostic) built
+ * once over Doctrine's Finders and once over Eloquent's, on the site's database: the same answers (FinderParity's
+ * outcomes). Its statements (App\Persistence\{Doctrine,Eloquent}\*) run on their own side. Reads only. The
+ * comments' counts each on a cache of their own, so neither answers from the other's.
  * The report goes to var/eloquent-app-repositories.json.
  *
  *     OMNIBRIDGE_ELOQUENT_SITE=1 php bin/phpunit vendor/omnibridge/eloquent/tests/Site/AppRepositoriesParityTest.php
  */
 final class AppRepositoriesParityTest extends KernelTestCase
 {
-    private const REGISTRAR = 'App\\Persistence\\Eloquent\\Repositories';
+    /** The site's repository interfaces and the entity each reads. */
+    private const INTERFACES = [
+        'App\\Repository\\Article\\Articles' => 'App\\Entity\\Article\\Article',
+        'App\\Repository\\Article\\Comments' => 'App\\Entity\\Article\\Comment',
+        'App\\Repository\\Article\\Tags' => 'App\\Entity\\Article\\Tag',
+        'App\\Repository\\Calendar\\Calendars' => 'App\\Entity\\Calendar\\Calendar',
+        'App\\Repository\\Destination\\Destinations' => 'App\\Entity\\Destination\\Destination',
+        'App\\Repository\\Gallery\\Galleries' => 'App\\Entity\\Gallery\\Gallery',
+        'App\\Repository\\Guestbook\\Guestbooks' => 'App\\Entity\\Guestbook\\Guestbook',
+        'App\\Repository\\Newsletter\\Newsletters' => 'App\\Entity\\Newsletter\\Newsletter',
+        'App\\Repository\\Newsletter\\Subscribers' => 'App\\Entity\\Newsletter\\Subscriber',
+        'App\\Repository\\Newsletter\\Subscriptions' => 'App\\Entity\\Newsletter\\Subscription',
+        'App\\Repository\\Newsletter\\Engagements' => 'App\\Entity\\Newsletter\\Engagement',
+    ];
 
     private EntityManagerInterface $entityManager;
 
@@ -38,14 +55,13 @@ final class AppRepositoriesParityTest extends KernelTestCase
 
     protected function setUp(): void
     {
-        if (!getenv('OMNIBRIDGE_ELOQUENT_SITE') || !class_exists(self::REGISTRAR)) {
-            self::markTestSkipped('Run in lesringostars\' suite (OMNIBRIDGE_ELOQUENT_SITE=1), whose App\\Persistence\\Eloquent holds its repositories on Eloquent.');
+        if (!getenv('OMNIBRIDGE_ELOQUENT_SITE') || !interface_exists('App\\Repository\\Article\\Articles')) {
+            self::markTestSkipped('Run in lesringostars\' suite (OMNIBRIDGE_ELOQUENT_SITE=1).');
         }
         self::bootKernel();
         $this->entityManager = static::getContainer()->get('doctrine')->getManager();
         // With omnibase's lifecycle, its AttributeReader among it, as a host gives it: #[Alias] read (Article::getComments()).
         $this->eloquent = OmnibaseHarness::persistence(static::getContainer());
-        (new (self::REGISTRAR)(new ArrayAdapter()))->register($this->eloquent->repositories());
     }
 
     public function testTheSitesRepositoriesAnswerAlikeOnBothBackends(): void
@@ -53,9 +69,19 @@ final class AppRepositoriesParityTest extends KernelTestCase
         $em = $this->entityManager;
         $connection = $em->getConnection();
         $repositories = $this->eloquent->repositories();
-        $doctrine = static fn (string $entity): object => $em->getRepository($entity);
-        $eloquent = static fn (string $interface, string $entity): object => $repositories->implementing($interface, $entity);
-        $classes = \constant(self::REGISTRAR.'::INTERFACES');
+        $doctrineFinders = DoctrineFinders::over($em);
+        $eloquentFinders = $this->eloquent->finders();
+        $doctrineRepositories = new EntityRepositories($doctrineFinders, static::getContainer());
+        // The repository of an interface on one side: the core's bound one (Aliases), else the entity's own class.
+        $side = static function (EntityRepositories $repositories, string $interface, string $entity): object {
+            $repository = isset(Aliases::INTERFACES[$interface]) ? $repositories->implementing($interface, $entity) : $repositories->of($entity);
+            self::assertInstanceOf($interface, $repository);
+
+            return $repository;
+        };
+        $doctrine = static fn (string $interface, string $entity): object => $side($doctrineRepositories, $interface, $entity);
+        $eloquent = static fn (string $interface, string $entity): object => $side($repositories, $interface, $entity);
+        $classes = self::INTERFACES;
         $table = static fn (string $entity): string => $em->getClassMetadata($entity)->getTableName();
         $first = static fn (string $entity, string $order = 'id ASC') => ($id = $connection->fetchOne('SELECT id FROM '.$table($entity).' ORDER BY '.$order.' LIMIT 1')) ? $em->find($entity, $id) : null;
 
@@ -75,7 +101,7 @@ final class AppRepositoriesParityTest extends KernelTestCase
         $ask = static function (string $name, string $interface, string $method, array $arguments) use (&$scenarios, $doctrine, $eloquent, $classes, $resolve): void {
             $entity = $classes[$interface] ?? \App\Entity\User::class;
             $scenarios[$name] = [
-                static fn () => $doctrine($entity)->{$method}(...$resolve('doctrine', $arguments)),
+                static fn () => $doctrine($interface, $entity)->{$method}(...$resolve('doctrine', $arguments)),
                 static fn () => $eloquent($interface, $entity)->{$method}(...$resolve('eloquent', $arguments)),
             ];
         };
@@ -97,8 +123,8 @@ final class AppRepositoriesParityTest extends KernelTestCase
         $ask('Articles::publishedBetween, a year to a month ago', \App\Repository\Article\Articles::class, 'publishedBetween', [$year, new \DateTimeImmutable('-1 month')]);
         foreach (['twelve articles' => $articles, 'one article' => $article] as $which => $given) {
             $scenarios["Comments::countForAllCommentsIn, {$which}"] = [
-                static fn () => (new \App\Repository\Article\CommentRepository(new ArrayAdapter(), static::getContainer()->get('doctrine')))->countForAllCommentsIn($resolve('doctrine', $given)),
-                static fn () => $eloquent(\App\Repository\Article\Comments::class, \App\Entity\Article\Comment::class)->countForAllCommentsIn($resolve('eloquent', $given)),
+                static fn () => self::comments($doctrineFinders)->countForAllCommentsIn($resolve('doctrine', $given)),
+                static fn () => self::comments($eloquentFinders)->countForAllCommentsIn($resolve('eloquent', $given)),
             ];
         }
         $ask('Tags, the first twenty', \App\Repository\Article\Tags::class, 'findBy', [[], ['id' => 'ASC'], 20]);
@@ -153,5 +179,11 @@ final class AppRepositoriesParityTest extends KernelTestCase
             self::assertSame($expected, $entry['outcome'], $name);
         }
         self::assertGreaterThan(40, \count($report));
+    }
+
+    /** The comments' repository with a cache of its own, over one side's Finders. */
+    private static function comments(Finders $finders): object
+    {
+        return new \App\Repository\Article\CommentRepository(new ArrayAdapter(), $finders, \App\Entity\Article\Comment::class);
     }
 }

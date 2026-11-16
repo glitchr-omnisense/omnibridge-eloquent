@@ -9,8 +9,8 @@ use Omnibridge\Eloquent\EntityMap;
 use Omnibridge\Schema\Entity;
 
 /**
- * BulkDeletes on omnibridge/eloquent (plan "omnibase agnostic", step F7c): the rows of a class whose fields equal the
- * criteria deleted in statements, no entity read nor event dispatched - DoctrineBulkDeletes' DQL DELETE: the class's
+ * BulkDeletes on omnibridge/eloquent (plan "omnibase agnostic", step F7c): the rows of a class whose fields (or to-one
+ * associations, by the related entity or its id; null as IS NULL) equal the criteria deleted in statements, no entity read nor event dispatched - DoctrineBulkDeletes' DQL DELETE: the class's
  * rows only (a single-table class by its discriminator), the store's scopes applied (Doctrine's filters), and for a
  * joined hierarchy every table of it, the subclasses' first (Doctrine's multi-table delete). The number of rows.
  */
@@ -30,8 +30,27 @@ final class EloquentBulkDeletes implements BulkDeletes
             if (1 !== preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $field)) {
                 throw new \InvalidArgumentException(sprintf('"%s" is no field name.', $field));
             }
-            $declared = $map->entity->fields[$field] ?? throw new \InvalidArgumentException(sprintf('%s has no field "%s".', $class, $field));
-            $query->where($map->column($field), '=', $casts->toDatabase($declared->type, $value));
+            $declared = $map->entity->fields[$field] ?? null;
+            if (null !== $declared) {
+                if (\is_array($value)) {
+                    $query->whereIn($map->column($field), array_map(static fn (mixed $one): mixed => $casts->toDatabase($declared->type, $one), array_values($value)));
+                } else {
+                    null === $value ? $query->whereNull($map->column($field)) : $query->where($map->column($field), '=', $casts->toDatabase($declared->type, $value));
+                }
+
+                continue;
+            }
+            // A to-one association (DQL's `e.room = :room`): its join column against the entity's identifier, or the id given.
+            if (!isset($map->entity->relations[$field]) || !$map->hasColumn($field)) {
+                throw new \InvalidArgumentException(sprintf('%s has no field nor owning to-one association "%s".', $class, $field));
+            }
+            $column = $map->column($field);
+            if (\is_array($value)) {
+                $query->whereIn($column, array_map(static fn (mixed $one): mixed => \is_object($one) ? $store->identifier($one) : $one, array_values($value)));
+                continue;
+            }
+            $id = \is_object($value) ? $store->identifier($value) : $value;
+            null === $id ? $query->whereNull($column) : $query->where($column, '=', $id);
         }
 
         $identifier = $map->identifier[0];

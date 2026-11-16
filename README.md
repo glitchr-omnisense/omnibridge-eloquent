@@ -1,14 +1,16 @@
 # omnibridge/eloquent
 
-omnibase's entities on Eloquent's database layer, framework-free: illuminate/database - Laravel's
-connection, or Capsule outside Laravel - reading the tables omnisense/omnibridge's `Omnibridge\Schema`
-describes into **the same plain PHP entities Doctrine maps**. A data mapper (omnisense/omnibase's plan
-"omnibase agnostic", answer 1): the entities are never turned into Eloquent models, nothing in them
-knows which backend read them, and an application may keep its own Eloquent models beside them.
+omnibase's persistence on Eloquent's database layer, framework-free: illuminate/database - Laravel's
+connection, or Capsule outside Laravel - reading the tables omnisense/omnibridge's schema describes into **the
+same plain PHP entities every persistence maps** (`Base\Entity\*`, `App\Entity\*`: coded once). A data mapper:
+the entities are never turned into Eloquent models, nothing in them knows which backend read them, and an
+application may keep its own Eloquent models beside them.
 
-Steps F7b (**the reads**) and F7c (**the writes**) of that plan: the unit of work persists, removes and
-flushes as Doctrine's does - the same rows, the same lifecycle events in the same order - and refuses aloud
-what it does not do (`UnsupportedPersistence`).
+The unit of work persists, removes and flushes as Doctrine's does - the same rows, the same lifecycle events in
+the same order - and refuses aloud what it does not do (`UnsupportedPersistence`). **It declares no repository**:
+the repositories are the core's agnostic classes (`Base\Repository\*`, a bundle's, `App\Repository\*`, all over
+`Base\Database\Repository\ServiceEntityRepository`), the same classes on every persistence; this package is only
+the engine behind them. An application never names a class of this package.
 
 ```sh
 composer require omnibridge/eloquent
@@ -58,26 +60,33 @@ $article->getAuthor()->getId();                  // a ghost: no query
 $article->getTags()->count();                    // the collection read now
 ```
 
-## omnibase's persistence on Eloquent (`Omnibridge\Eloquent\Omnibase\`)
+## omnibase's persistence on Eloquent (`Omnibridge\Eloquent\Omnibase\`, internal)
 
-Loaded with omnisense/omnibase (`suggest`): `EloquentPersistence::create($connection, ['project_dir' => ...])`
-describes the core's and the application's entities (the core's `EntitySchema`, no other persistence asked)
-and gives:
+With omnisense/omnibase: `EloquentPersistence::create($connection, ['project_dir' => ...])` describes the core's
+and the application's entities (the core's `EntitySchema`, no other persistence asked) and gives, behind the core's
+contracts:
 
 - the store with omnibase's column types (`OmnibaseCasts`: datetime in UTC, `array` serialized, the passkeys'
   base64 / AAGUID / trust path, each enumeration and set through its own `toPHPValue()`);
 - `EloquentBackend`: omnisense/omnibridge's `Backend` ("eloquent", lazy associations) with omnibase's trash and
   vault scopes added to every query while enabled, as Doctrine's filters are;
-- `EloquentRepositories`: the core's `Repositories` - `of()` gives the core's repository on Eloquent for its entity and
-  its subclasses (one per interface of the core: `Threads`, `Users`, `Comments`...), an application's own
-  (`register()`), else the plain `EloquentEntities`; `implementing($interface)`, `byIds()`, `oneById()`;
+- `Base\Database\Repository\Finders` (`EloquentFinders`): what every repository is built from - the engine of a
+  class (`of()`), the entities' shapes, the unit of work, the common SQL (`sql()`, `platform()`, internal); and `Base\Database\Repository\Repositories`,
+  the core's `EntityRepositories` over it: `of($class)` gives the entity's repository (its `repositoryClass`, its
+  parent entity's, the one of its name, else the plain `ServiceEntityRepository`), with the whole finder language for
+  every class;
 - **the finder language** (`EloquentFinder`): omnibase's finders - `findOneByEmailOrUsername()`,
   `cacheOneByStateAndSlugStartingWith()`, `countForParentByState()`, `sumOfViewsBy()`... - read by the core's
   `Finder\Parser` and compiled onto Illuminate's query builder word for word as omnibridge/doctrine compiles them to DQL
   (the joins with the scopes in their ON, the Translatable join, the key, the groups, FIELD/RAND/JSON_ARRAY_POSITION,
-  the grouped counts and their rows); what it cannot express is refused aloud (`UnsupportedQueryException`). The 14
-  `#[BackendOnly]` methods (the analytics' native SQL, `Redirections::hit()`) are written on Eloquent's connection.
-  See [docs/finder.md](docs/finder.md).
+  the grouped counts and their rows); `findBy()`'s criteria array reads `null` as IS NULL and an empty list as no row;
+  what it cannot express is refused aloud (`UnsupportedQueryException`). See [docs/finder.md](docs/finder.md);
+- **the common SQL**: what the core's repositories add to the language - `findValuesBy()`, `updateBy()`, `deleteBy()`,
+  `lockOneBy()`, the relational criteria, `Field::of()`, `sql()` - is written once by the core around the rows this
+  engine selects (`EloquentFinder::identifiers()`, internal); nothing per repository here;
+- **the lifecycle**: the unit of work's neutral events (`Base\Contract\Lifecycle\*`: PrePersist ... PostFlush, PostLoad)
+  to omnibase's behaviours, to the entity dispatchers' neutral hooks, then to the host's callables tagged
+  `Base\Contract\Lifecycle\Listeners::TAG` (option `listeners`).
 
 ## Tests
 
@@ -95,12 +104,15 @@ included) and the same lifecycle events in the same order - a graph inserted in 
 rows, deletes cascaded, orphans, a nullable cycle, a listener's new value and OnFlush insertion, refusals, a
 rolled-back transaction, the states. `ConnectionsTest`
 (URL, Capsule, PDO, a Laravel database manager) and `Omnibase\OmnibasePartTest` (omnibase's column types, the core's
-repositories on the store, the backend's scopes; the core needed: `compose.checkouts.yml` until the core's 5.x with
-`EntitySchema` is served).
+repositories on the store, the backend's scopes).
 
 `Omnibase\FinderTest` (the finder language on the fixtures), `Omnibase\RepositoriesTest` (the core's 28 interfaces
-implemented, the 14 backend-only methods refused, the hours' writes through the unit of work) and
-`Omnibase\OmnibaseCascadesTest` (omnibase's #[Cascade] and #[OrphanRemoval]).
+implemented, the 14 backend-only methods, the hours' writes through the unit of work) and
+`Omnibase\OmnibaseCascadesTest` (omnibase's #[Cascade] and #[OrphanRemoval]). `Omnibase\RepositoryParityTest` is the
+repository test of the family: one agnostic repository class, the same calls and the same answers on Doctrine and on
+Eloquent (the criteria array, groups, paths one association deep, class conditions, orders, pages, `count()`,
+`Repositories::of()` for a class with and without a repository; tests/Omnibase/LanguageParityTest: every word of the
+language on both engines).
 
 `Harness\FinderParityTest` (in omnisense/omnibase's harness, SQLite) and `Site\FinderParityTest` (in an application,
 MySQL) run every finder call on both compilers, the same database, and compare the rows - see
@@ -109,4 +121,5 @@ vendor (`tests/Site/autoload.php` appends its class loader): every entity of the
 Doctrine and through the store on the same connection, on a sample of the site's rows (with and without the
 trash scope) and on a row written for each class in a transaction rolled back - see [docs/testing.md](docs/testing.md).
 
-Requires PHP 8.4 (lazy objects), illuminate/database 12 or 13, doctrine/collections 2 or 3, omnisense/omnibridge 1.
+Requires PHP 8.4 (lazy objects), illuminate/database 12 or 13, doctrine/collections 2 or 3, omnisense/omnibridge 1;
+omnibase's part omnisense/omnibase 1.

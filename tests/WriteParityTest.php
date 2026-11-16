@@ -355,7 +355,8 @@ final class WriteParityTest extends TestCase
         try {
             $this->unitOfWork->flush();
             self::fail('a duplicate key was written');
-        } catch (\Illuminate\Database\QueryException) {
+        } catch (\Illuminate\Database\QueryException|\Base\Database\Exception\UniqueConstraintViolation) {
+            // Illuminate's own without omnisense/omnibase, the core's neutral one with it.
         }
         $this->expectException(UnsupportedPersistence::class);
         $this->unitOfWork->persist(new User('after@example.org'));

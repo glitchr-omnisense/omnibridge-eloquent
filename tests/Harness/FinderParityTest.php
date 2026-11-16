@@ -8,6 +8,7 @@ use Base\Database\Repository\Finder\Group;
 use Base\Database\Repository\Finder\Parser;
 use Base\Database\Repository\Finder\Criterion;
 use Base\Database\Repository\Finder\Key;
+use Base\Database\Repository\EntityRepositories;
 use Base\Database\Repository\UnsupportedQueryException;
 use Base\Entity\Layout\ImageCrop;
 use Base\Entity\Thread;
@@ -17,6 +18,7 @@ use Base\Entity\User\Notification;
 use Base\Enum\CommentState;
 use Base\Enum\ThreadState;
 use Doctrine\ORM\EntityManagerInterface;
+use Omnibridge\Doctrine\Omnibase\DoctrineFinders;
 use Omnibridge\Eloquent\Omnibase\EloquentPersistence;
 use Omnibridge\Eloquent\Tests\Support\FinderParity;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -24,7 +26,7 @@ use Tests\Base\Database\Repository\HandWrittenQueries;
 
 /**
  * The finder language on both compilers, the same database (plan "omnibase agnostic", step F7b): omnibridge/doctrine's
- * ServiceEntityParser and omnibridge/eloquent's EloquentFinder, each call of omnisense/omnibase's FinderParityTest and
+ * DqlCompiler and omnibridge/eloquent's EloquentFinder, each call of omnisense/omnibase's FinderParityTest and
  * one of each word of the language, then the repositories' rewritten queries (the core's HandWrittenQueries' "after"
  * methods on Doctrine's repositories and on Eloquent's), on rows written for the purpose in a transaction rolled back.
  *
@@ -56,6 +58,14 @@ final class FinderParityTest extends KernelTestCase
         $this->eloquent = FinderParity::persistence($this->entityManager, (string) static::getContainer()->getParameter('kernel.project_dir'));
     }
 
+    /** Doctrine's side: the same repositories as Eloquent's (the core's EntityRepositories), over Doctrine's Finders. */
+    private function doctrine(): EntityRepositories
+    {
+        return $this->doctrineRepositories ??= new EntityRepositories(DoctrineFinders::over($this->entityManager), static::getContainer());
+    }
+
+    private ?EntityRepositories $doctrineRepositories = null;
+
     public function testEachFinderCallGivesTheSameRowsOnBothCompilers(): void
     {
         $connection = $this->entityManager->getConnection();
@@ -83,16 +93,16 @@ final class FinderParityTest extends KernelTestCase
                 return $entityManager->createQueryBuilder()->select('x')->from($class, 'x')->orderBy('x.'.$id, 'DESC')->setMaxResults(1)->getQuery()->getOneOrNullResult();
             };
             $trashed = $this->trashedThread();
-            $doctrine = HandWrittenQueries::scenarios(fn (string $class) => $entityManager->getRepository($class), $latest, \App\Entity\User::class, null, $trashed);
+            $doctrine = HandWrittenQueries::scenarios(fn (string $class) => $this->doctrine()->of($class), $latest, \App\Entity\User::class, null, $trashed);
             $eloquent = HandWrittenQueries::scenarios(fn (string $class) => $this->eloquent->repositories()->of($class), $latest, \App\Entity\User::class, null, $trashed);
             $scenarios = [];
             foreach ($doctrine as $name => [, $after]) {
                 $scenarios[$name] = [$after, $eloquent[$name][1]];
             }
             // Step E2b: a trashed thread's comments on both, the book's.
-            $scenarios['Comments::findVisible(the trashed thread)'] = [fn () => $entityManager->getRepository(Comment::class)->findVisible($trashed), fn () => $this->eloquent->repositories()->of(Comment::class)->findVisible($trashed)];
-            $scenarios['Comments::countVisible(the trashed thread)'] = [fn () => $entityManager->getRepository(Comment::class)->countVisible($trashed), fn () => $this->eloquent->repositories()->of(Comment::class)->countVisible($trashed)];
-            $scenarios['findByThreadNullAndParentNull (the join of before)'] = [fn () => $entityManager->getRepository(Comment::class)->findByThreadNullAndParentNull(['state' => CommentState::APPROVED], ['id' => 'ASC']), fn () => $this->eloquent->repositories()->of(Comment::class)->findByThreadNullAndParentNull(['state' => CommentState::APPROVED], ['id' => 'ASC'])];
+            $scenarios['Comments::findVisible(the trashed thread)'] = [fn () => $this->doctrine()->of(Comment::class)->findVisible($trashed), fn () => $this->eloquent->repositories()->of(Comment::class)->findVisible($trashed)];
+            $scenarios['Comments::countVisible(the trashed thread)'] = [fn () => $this->doctrine()->of(Comment::class)->countVisible($trashed), fn () => $this->eloquent->repositories()->of(Comment::class)->countVisible($trashed)];
+            $scenarios['findByThreadNullAndParentNull (the join of before)'] = [fn () => $this->doctrine()->of(Comment::class)->findByThreadNullAndParentNull(['state' => CommentState::APPROVED], ['id' => 'ASC']), fn () => $this->eloquent->repositories()->of(Comment::class)->findByThreadNullAndParentNull(['state' => CommentState::APPROVED], ['id' => 'ASC'])];
             $report = FinderParity::compare($scenarios, $this->clear(...));
         } finally {
             $connection->rollBack();
@@ -314,14 +324,14 @@ final class FinderParityTest extends KernelTestCase
             [$class, $method, $arguments] = $call;
             $name = sprintf('%02d %s::%s(%s)', $index, substr($class, strrpos($class, '\\') + 1), $method, mb_substr((string) json_encode(FinderParity::normalise($arguments), \JSON_UNESCAPED_SLASHES | \JSON_PARTIAL_OUTPUT_ON_ERROR), 0, 120));
             $scenarios[$name] = [
-                fn () => $this->entityManager->getRepository($class)->{$method}(...$arguments),
+                fn () => $this->doctrine()->of($class)->{$method}(...$arguments),
                 fn () => $this->eloquent->repositories()->of($class)->{$method}(...$arguments),
                 $call[3] ?? false,
                 $call[4] ?? null,
             ];
         }
         $scenarios['findRandomlyByState (how many)'] = [
-            fn () => \count($this->entityManager->getRepository(Thread::class)->findRandomlyByState(ThreadState::PUBLISH)->getResult()),
+            fn () => \count($this->doctrine()->of(Thread::class)->findRandomlyByState(ThreadState::PUBLISH)->getResult()),
             fn () => \count($this->eloquent->repositories()->of(Thread::class)->findRandomlyByState(ThreadState::PUBLISH)->getResult()),
             false,
             self::RAND_SQLITE,
@@ -380,8 +390,8 @@ final class FinderParityTest extends KernelTestCase
         }
         $this->trashedId = $trashed->getId();
 
-        $views = $entityManager->getRepository(\Base\Entity\Analytics\PageView::class);
-        $visits = $entityManager->getRepository(\Base\Entity\Analytics\Visit::class);
+        $views = $this->doctrine()->of(\Base\Entity\Analytics\PageView::class);
+        $visits = $this->doctrine()->of(\Base\Entity\Analytics\Visit::class);
         foreach ([['/', 0], ['/', 0], ['/', 40 * 86400], ['/about', 3600]] as [$path, $ago]) {
             $views->incrementView($path, $now->modify('-'.$ago.' seconds'));
             $visits->recordPresence(\Base\Entity\Analytics\Visit::TYPE_VISITOR, md5($path.$ago), $now->modify('-'.$ago.' seconds'));

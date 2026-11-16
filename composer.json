@@ -1,6 +1,6 @@
 {
     "name": "omnibridge/eloquent",
-    "description": "omnibase's entities on Eloquent's database layer, framework-free: illuminate/database (Laravel's connection, or Capsule outside Laravel) reading the tables omnisense/omnibridge's Omnibridge\\Schema describes into the same plain PHP entities Doctrine maps - a data mapper: tables from the description, a hydrator with PHP 8.4 lazy ghosts and lazy collections, an identity map, casts; and omnibase's persistence on Eloquent (Omnibridge\\Eloquent\\Omnibase\\: its backend, scopes, repositories and finder compiler) when omnisense/omnibase is installed.",
+    "description": "omnibase's persistence on Eloquent's database layer, framework-free: illuminate/database (Laravel's connection, or Capsule outside Laravel) reading the tables omnisense/omnibridge's schema describes into the same plain PHP entities any other persistence maps - a data mapper: tables from the description, a hydrator with PHP 8.4 lazy ghosts and lazy collections, an identity map, casts; behind the core's contracts, the compiler of the finder language, the statements of the backend-only queries, the unit of work and its lifecycle. It declares no repository: Base\\Repository\\* are the core's, the same on every persistence.",
     "type": "library",
     "keywords": [
         "omnibridge",
@@ -23,14 +23,13 @@
         "omnisense/omnibridge": "^1.0"
     },
     "require-dev": {
-        "omnibridge/doctrine": "1.x-dev || 2.x-dev",
-        "omnisense/omnibase": "5.x-dev || 6.x-dev",
-        "phpunit/phpunit": "^11.5"
+        "omnibridge/doctrine": "^1.0",
+        "omnisense/omnibase": "^1.0",
+        "phpunit/phpunit": "^11.5",
+        "symfony/validator": "^7.0|^8.0"
     },
     "suggest": {
-        "omnisense/omnibase": "Omnibridge\\Eloquent\\Omnibase\\: omnibase's persistence on Eloquent (its backend and scopes, the repositories, the finder compiler, the behaviours and listeners); loaded only with the core",
-        "doctrine/persistence": "An entity dispatcher of omnibase that still overrides a former hook typed on its LifecycleEventArgs (onPersist(), onUpdate(), onRemove()...: AbstractEventDispatcher::formerHooks()); the core's dispatchers and those on the neutral hooks need none (^3.0|^4.0)",
-        "web-auth/webauthn-lib": "The passkeys' records (PasskeyRepository as webauthn's credential repository) (^5.3)"
+        "omnisense/omnibase": "The core this package is the Eloquent persistence of (^1.0)"
     },
     "autoload": {
         "psr-4": {
@@ -40,11 +39,6 @@
     "autoload-dev": {
         "psr-4": {
             "Omnibridge\\Eloquent\\Tests\\": "tests/"
-        }
-    },
-    "extra": {
-        "branch-alias": {
-            "dev-1.x": "1.x-dev"
         }
     },
     "minimum-stability": "dev",

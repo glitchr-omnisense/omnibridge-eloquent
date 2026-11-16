@@ -3,7 +3,6 @@
 namespace Omnibridge\Eloquent\Omnibase\Lifecycle;
 
 use Base\EntityDispatcher\AbstractEventDispatcher;
-use Omnibridge\Eloquent\EloquentUnitOfWork;
 use Omnibridge\Persistence\Lifecycle;
 
 /**
@@ -20,7 +19,7 @@ final class EntityDispatchersListener
     private ?array $listeners = null;
 
     /** @param iterable<object>|(\Closure(): iterable<object>) $dispatchers */
-    public function __construct(private readonly iterable|\Closure $dispatchers, private readonly EloquentUnitOfWork $unitOfWork)
+    public function __construct(private readonly iterable|\Closure $dispatchers)
     {
     }
 
@@ -46,7 +45,7 @@ final class EntityDispatchersListener
             if (!$dispatcher instanceof AbstractEventDispatcher) {
                 throw new \InvalidArgumentException(sprintf('An entity dispatcher is an %s, not a %s.', AbstractEventDispatcher::class, get_debug_type($dispatcher)));
             }
-            $listeners[] = new EntityDispatcherListener($dispatcher, $this->unitOfWork);
+            $listeners[] = new EntityDispatcherListener($dispatcher);
         }
 
         return $this->listeners = $listeners;

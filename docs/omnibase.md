@@ -27,13 +27,12 @@ $user = $users->findOneBy(['email' => 'someone@example.org']);
   `deletedAt IS NULL` to every query of a `#[Trasheable]` entity, `enableScope('vault', ['environment' => 'prod'])`
   `vault IS NULL OR vault = 'prod'` for a `#[Vault]` one - the core's `TrashScope` and `VaultScope`, what Doctrine's
   filters compile -, in the class's WHERE and in the ON of a join of it (the finder's), as Doctrine's filters.
-- **The repositories** (`EloquentRepositories`, the core's `Repositories`): `of($class)` the core's repository on
-  Eloquent for its entity and its subclasses (`Repository\*`: each interface of `Base\Repository\Aliases::INTERFACES`),
-  an application's own (`register()`), else the plain `EloquentEntities`; `implementing($interface)`; `byIds()`,
-  `oneById()`. Every repository reads the finder language (`findOneByEmailOrUsername()`, `countByStateAnd...()`) and
-  `findBy()`'s criteria array as omnibridge/doctrine's `ServiceEntityRepository` reads them - see [the finder
-  language](finder.md). The 14 `#[BackendOnly]` methods (no finder) are written here
-  on Eloquent's connection: omnibridge/doctrine's statements, the same rows.
+- **The repositories**: none here. The core's agnostic classes (`Base\Repository\*`, a bundle's, `App\Repository\*`)
+  are built over `EloquentFinders` (`finders()`); `repositories()` is the core's `EntityRepositories` over them:
+  `of($class)` the entity's repository (else the plain `ServiceEntityRepository`), `implementing($interface)`,
+  `byIds()`, `oneById()`, `register()`. Every repository reads the finder language (`findOneByEmailOrUsername()`,
+  `countByStateAnd...()`) and `findBy()`'s criteria array as on Doctrine - see [the finder language](finder.md). The
+  core's analytics and `Redirections::hit()` are written once in the language, the same rows as on omnibridge/doctrine.
 
 **Writes** ([Writing entities](writing.md)): through the unit of work, the repositories' `persist()`, `remove()` and
 `flush()` as `ServiceEntityRepository`'s, `ScopedWeeks::save()`/`forget()` and `WeekDays::save()` as omnibridge/doctrine's.

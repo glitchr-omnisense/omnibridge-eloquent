@@ -2,14 +2,18 @@
 
 namespace Omnibridge\Eloquent\Tests\Omnibase;
 
-use Base\Database\Repository\BackendOnly;
+use Base\Database\Repository\EntityRepositories;
+use Base\Database\UnitOfWorks;
+use Omnibridge\Eloquent\EloquentUnitOfWork;
+use Omnibridge\Eloquent\Omnibase\EloquentBehaviours;
 use Base\Database\Repository\Entities;
 use Base\Database\Repository\UnsupportedQueryException;
 use Base\Repository\Aliases;
 use Omnibridge\Eloquent\Connections;
-use Omnibridge\Eloquent\Omnibase\EloquentEntities;
+use Base\Database\Repository\ServiceEntityRepository;
+use Omnibridge\Eloquent\Omnibase\EloquentFinders;
 use Omnibridge\Eloquent\Omnibase\EloquentPersistence;
-use Omnibridge\Eloquent\Omnibase\Repository\ThreadRepository;
+use Base\Repository\ThreadRepository;
 use Omnibridge\Eloquent\UnsupportedPersistence;
 use Omnibridge\Schema\Database\SchemaCreator;
 use Omnibridge\Schema\Description;
@@ -17,8 +21,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * The core's repository interfaces on Eloquent: each implemented (Aliases::INTERFACES, the core's entities described
- * with no Doctrine), a subclass's entity given its parent's repository, the methods declared #[BackendOnly] run on
- * Eloquent's connection (step F7f); the writes through the unit of work.
+ * with no Doctrine), a subclass's entity given its parent's repository, the analytics and a redirection's hit (written
+ * once in the language) run on Eloquent; the writes through the unit of work.
  */
 final class RepositoriesTest extends TestCase
 {
@@ -35,12 +39,12 @@ final class RepositoriesTest extends TestCase
     public function testEachInterfaceOfTheCoreIsImplemented(): void
     {
         $repositories = self::$persistence->repositories();
-        $interfaces = array_filter(array_keys(Aliases::INTERFACES), static fn (string $interface): bool => is_subclass_of($interface, Entities::class));
-        self::assertCount(28, $interfaces, 'the 28 repository interfaces (the 29th, Repositories, is EloquentRepositories)');
+        $interfaces = array_keys(Aliases::INTERFACES);
+        self::assertCount(28, $interfaces, 'the 28 repository interfaces of the core');
         foreach ($interfaces as $interface) {
             $repository = $repositories->implementing($interface);
             self::assertInstanceOf($interface, $repository);
-            self::assertInstanceOf(EloquentEntities::class, $repository);
+            self::assertInstanceOf(ServiceEntityRepository::class, $repository);
         }
         self::assertInstanceOf(\Base\Database\Repository\Repositories::class, $repositories);
     }
@@ -49,30 +53,37 @@ final class RepositoriesTest extends TestCase
     {
         $repositories = self::$persistence->repositories();
         self::assertSame(ThreadRepository::class, $repositories->repositoryClass(\Base\Entity\Thread::class));
-        self::assertSame(EloquentEntities::class, $repositories->repositoryClass(\Base\Entity\Layout\Image::class));
+        // An entity that names no repository gets the agnostic parent itself: the finder language for every class.
+        self::assertSame(ServiceEntityRepository::class, $repositories->repositoryClass(\Base\Entity\Layout\ShortLinkIntl::class));
+        self::assertSame(ServiceEntityRepository::class, $repositories->of(\Base\Entity\Layout\ShortLinkIntl::class)::class);
         $repositories->register(\Base\Entity\Layout\Image::class, ThreadRepository::class);
         self::assertSame(ThreadRepository::class, $repositories->repositoryClass(\Base\Entity\Layout\Image::class));
+        $images = $repositories->of(\Base\Entity\Layout\Image::class);
+        self::assertInstanceOf(ThreadRepository::class, $images);
+        self::assertSame(\Base\Entity\Layout\Image::class, $images->getClassName());
+        self::assertSame(\Base\Entity\Thread::class, $repositories->implementing(\Base\Repository\Threads::class)->getClassName());
+    }
 
-        // An application's repository made by its factory (step F7f: one that needs a cache).
-        $made = [];
-        $repositories->register(\Base\Entity\Layout\Image::class, ThreadRepository::class, static function ($store, string $class, $unitOfWork) use (&$made): ThreadRepository {
-            return $made[] = new ThreadRepository($store, $class, $unitOfWork);
-        });
-        $image = $repositories->of(\Base\Entity\Layout\Image::class);
-        self::assertSame([$image], $made);
-        // Image's ThreadRepository, registered ahead of the core's entries, declares Threads: it answers it (an
-        // application's subclass of it would not - lesringostars' App\Persistence\Eloquent, tests/Site).
-        self::assertSame(\Base\Entity\Layout\Image::class, $repositories->implementing(\Base\Repository\Threads::class)->getClassName());
-        self::assertSame(\Base\Entity\Thread::class, $repositories->implementing(\Base\Repository\Threads::class, \Base\Entity\Thread::class)->getClassName());
+    public function testAUnitOfWorkWithoutItsPersistenceStillGivesTheCoresRepositories(): void
+    {
+        // A unit of work made by hand (no EloquentPersistence remembers it): the behaviours' Repositories are the
+        // core's EntityRepositories over EloquentFinders on its store, writing through it.
+        EloquentBehaviours::ensureRegistered();
+        $persistence = self::$persistence ?? throw new \LogicException('No persistence: setUp() did not run.');
+        $unitOfWork = new EloquentUnitOfWork($persistence->store());
+        $repositories = UnitOfWorks::repositories($unitOfWork);
+        self::assertInstanceOf(EntityRepositories::class, $repositories);
+        $threads = $repositories->of(\Base\Entity\Thread::class);
+        self::assertInstanceOf(ThreadRepository::class, $threads);
+        self::assertSame($unitOfWork, (new \ReflectionMethod($threads, 'unitOfWork'))->invoke($threads));
     }
 
     /**
-     * The 14 methods no finder compiles (#[BackendOnly] on the core's interfaces, step F7f) run on Eloquent: here
-     * SQLite's branch (ON CONFLICT, INSERT ... ON CONFLICT DO NOTHING); their parity with omnibridge/doctrine is
-     * tests/Harness/BackendWrittenParityTest (SQLite) and tests/Site/BackendWrittenParityTest (MySQL). A persistence
-     * the declaration does not name still refuses them aloud.
+     * The 15 methods once written per backend (the analytics, a redirection's hit), now written once in the core's
+     * language, run on Eloquent; their parity with omnibridge/doctrine is the core's tests/Repository/AnalyticsParityTest,
+     * tests/Harness/AnalyticsParityTest (SQLite) and tests/Site/AnalyticsParityTest (MySQL).
      */
-    public function testTheBackendWrittenMethodsRunOnEloquent(): void
+    public function testTheAnalyticsAndTheHitRunOnEloquent(): void
     {
         $store = self::$persistence->store();
         $description = $store->mapping()->description;
@@ -82,12 +93,6 @@ final class RepositoriesTest extends TestCase
             $tables[$table] = $description->tables[$table];
         }
         (new SchemaCreator($store->connection()->getPdo()))->create(new Description([], $tables));
-
-        $declared = BackendOnly::declared(array_keys(Aliases::INTERFACES));
-        self::assertCount(14, $declared);
-        foreach ($declared as $name => $declaration) {
-            self::assertTrue(BackendOnly::runs(...[...explode('::', $name), 'eloquent']), $name);
-        }
 
         $repositories = self::$persistence->repositories();
         $views = $repositories->implementing(\Base\Repository\Analytics\PageViews::class);
@@ -141,10 +146,6 @@ final class RepositoriesTest extends TestCase
         $again = $redirections->find($redirection->getId());
         self::assertSame(2, $again->getHits());
         self::assertNotNull($again->getLastHitAt());
-
-        $this->expectException(UnsupportedQueryException::class);
-        $this->expectExceptionMessage('written for doctrine, eloquent only');
-        BackendOnly::refuse(\Base\Repository\Layout\Redirections::class, 'hit', 'cycle');
     }
 
     /** The repositories' writes go through the unit of work (step F7c): ScopedWeeks::save()/forget(), WeekDays::save(). */
@@ -180,6 +181,6 @@ final class RepositoriesTest extends TestCase
 
         // A repository made without a unit of work refuses to write.
         $this->expectException(UnsupportedPersistence::class);
-        (new EloquentEntities($store, \Base\Entity\Hours\ScopedWeek::class))->persist(new \Base\Entity\Hours\ScopedWeek('x', []));
+        (new ServiceEntityRepository(new EloquentFinders($store), \Base\Entity\Hours\ScopedWeek::class))->persist(new \Base\Entity\Hours\ScopedWeek('x', []));
     }
 }

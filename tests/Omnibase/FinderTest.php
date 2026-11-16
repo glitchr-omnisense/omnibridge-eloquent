@@ -14,7 +14,8 @@ use Omnibridge\Eloquent\Casts;
 use Omnibridge\Eloquent\Connections;
 use Omnibridge\Eloquent\EntityStore;
 use Omnibridge\Eloquent\Mapping;
-use Omnibridge\Eloquent\Omnibase\EloquentEntities;
+use Base\Database\Repository\ServiceEntityRepository;
+use Omnibridge\Eloquent\Omnibase\EloquentFinders;
 use Omnibridge\Eloquent\Omnibase\Finder\FinderQuery;
 use Omnibridge\Eloquent\Tests\Fixtures\Entity\Article;
 use Omnibridge\Eloquent\Tests\Fixtures\Entity\Page;
@@ -94,7 +95,8 @@ final class FinderTest extends TestCase
         self::assertSame(['One_first', 'Two'], $this->titles($threads->findByPublishedAtWithin('+1 week', [], ['id' => 'ASC'])));
         self::assertSame(['three', 'Four'], $this->titles($threads->findByPublishedAtNull([], ['id' => 'ASC'])));
         self::assertSame(['Two', 'three', 'Four'], $this->titles($threads->findByBut($this->ids['one'], [], ['id' => 'ASC'])), 'But: every row but that id');
-        self::assertSame([], $this->titles($threads->findBy(['parent' => null])), 'null in a criteria array is `= NULL`, as omnibase\'s finder compares it: no row');
+        self::assertSame(['One_first', 'Two'], $this->titles($threads->findBy(['parent' => null], ['id' => 'ASC'])), 'null in a criteria array is IS NULL');
+        self::assertSame([], $this->titles($threads->findBy(['id' => []])), 'an empty list matches nothing');
     }
 
     /** A finder's query is omnibase's Pages (step F7d-2): what Paginator::paginate() pages through, each entity counted once. */
@@ -150,7 +152,7 @@ final class FinderTest extends TestCase
         self::assertSame(['One_first', 'Two', 'three'], $this->titles($threads->findByTitleOrTitle('Two', 'three', [Group::by('ParentNullAndAuthorNotNull')], ['id' => 'ASC'])), 'a group joined by the call\'s separator');
         self::assertSame(3, $threads->count([Group::by('TitleStartingWithOrParentNotNull', 'One')]));
 
-        // A group built from its members (Group::of(), omnisense/omnibase 5.x, step B1b): the same compilation, nested,
+        // A group built from its members (Group::of()): the same compilation, nested,
         // a key and the words of a group's name - the back office's search and filters.
         if (method_exists(Group::class, 'of')) {
             $search = Group::of(Parser::SEPARATOR_OR, Criterion::of('title', '%one%', Parser::OPTION_INSENSITIVE, Parser::OPTION_PARTIAL), Criterion::of('title', 'Two'));
@@ -207,10 +209,7 @@ final class FinderTest extends TestCase
     {
         $threads = $this->threads();
         foreach ([
-            fn () => $threads->findByPartialAuthor('%a%'),
-            fn () => $threads->findByPartialTitle(['a', 'b'])->getResult(),
             fn () => $threads->findBy([], ['RANDOM_FUNCTION(e.id)' => 'ASC']),
-            fn () => $threads->findBy(['author.profile.bio' => 'x']),
             fn () => $threads->findBy(['nothing' => 1]),
             fn () => $threads->findByTitle('x', [], [], null, null, null, ['a' => 'e.id + :parameter']),
         ] as $index => $call) {
@@ -223,9 +222,10 @@ final class FinderTest extends TestCase
         }
     }
 
-    private function threads(): EloquentEntities
+    /** @return ServiceEntityRepository<object> */
+    private function threads(): ServiceEntityRepository
     {
-        return new EloquentEntities($this->store, Thread::class);
+        return new ServiceEntityRepository(new EloquentFinders($this->store), Thread::class);
     }
 
     /** @return list<string> */

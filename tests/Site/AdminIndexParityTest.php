@@ -212,9 +212,11 @@ final class AdminIndexParityTest extends KernelTestCase
         return ['total' => $page->getTotal(), 'ids' => $ids];
     }
 
+    private ?\Base\Database\Repository\EntityRepositories $doctrineRepositories = null;
+
     private function repositories(string $persistence): \Base\Database\Repository\Repositories
     {
-        return 'eloquent' === $persistence ? $this->eloquent->repositories() : new \Omnibridge\Doctrine\Omnibase\DoctrineRepositories($this->entityManager);
+        return 'eloquent' === $persistence ? $this->eloquent->repositories() : ($this->doctrineRepositories ??= new \Base\Database\Repository\EntityRepositories(\Omnibridge\Doctrine\Omnibase\DoctrineFinders::over($this->entityManager), static::getContainer()));
     }
 
     private function call(object $controller, string $method, mixed ...$arguments): mixed

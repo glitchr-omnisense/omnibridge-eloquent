@@ -32,6 +32,16 @@ final class DoctrineSide implements UnitOfWork
         $this->entityManager->flush();
     }
 
+    public function clear(): void
+    {
+        $this->entityManager->clear();
+    }
+
+    public function isOpen(): bool
+    {
+        return $this->entityManager->isOpen();
+    }
+
     public function refresh(object $entity): void
     {
         $this->entityManager->refresh($entity);

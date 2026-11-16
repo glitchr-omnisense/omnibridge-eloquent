@@ -6,18 +6,18 @@ require_once __DIR__.'/autoload.php';
 
 use Base\Entity\Analytics\PageView;
 use Doctrine\ORM\EntityManagerInterface;
-use Omnibridge\Eloquent\Tests\Support\BackendWrittenParity;
+use Omnibridge\Eloquent\Tests\Support\AnalyticsParity;
 use Omnibridge\Eloquent\Tests\Support\FinderParity;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
- * The 14 methods no finder compiles (#[BackendOnly], plan "omnibase agnostic", step F7f) on both backends, on an
+ * The core's analytics and Redirections::hit() (written once in the core's language) on both backends, on an
  * application's MySQL database (lesringostars' test database, or a scratch copy of it): the reads on its rows equal,
- * the writes' rows equal (BackendWrittenParity; rolled back). The report goes to var/eloquent-backend-written-site.json.
+ * the writes' rows equal (AnalyticsParity; rolled back). The report goes to var/eloquent-analytics-site.json.
  *
- *     OMNIBRIDGE_ELOQUENT_SITE=1 php bin/phpunit vendor/omnibridge/eloquent/tests/Site/BackendWrittenParityTest.php
+ *     OMNIBRIDGE_ELOQUENT_SITE=1 php bin/phpunit vendor/omnibridge/eloquent/tests/Site/AnalyticsParityTest.php
  */
-final class BackendWrittenParityTest extends KernelTestCase
+final class AnalyticsParityTest extends KernelTestCase
 {
     public function testTheMethodsEachPersistenceWritesGiveTheSameRows(): void
     {
@@ -31,7 +31,7 @@ final class BackendWrittenParityTest extends KernelTestCase
         $table = $entityManager->getClassMetadata(PageView::class)->getTableName();
         $before = (int) $entityManager->getConnection()->fetchOne("SELECT COUNT(*) FROM {$table}");
 
-        $result = BackendWrittenParity::run($entityManager, $persistence, static::getContainer()->getParameter('kernel.project_dir').'/var/eloquent-backend-written-site.json');
+        $result = AnalyticsParity::run($entityManager, $persistence, static::getContainer()->getParameter('kernel.project_dir').'/var/eloquent-analytics-site.json');
 
         self::assertNotEmpty($result['reads']);
         foreach ($result['reads'] as $name => $entry) {

@@ -290,6 +290,52 @@ final class WriteParityTest extends KernelTestCase
     }
 
     /**
+     * The same on an entity read back and updated (an account's avatar sent with its profile, a classroom's cover): the
+     * file stored on the update, its name in the row (the sites' uploads lost, 2026-11-16).
+     */
+    public function testUploaderOnAnUpdate(): void
+    {
+        $directory = static::getContainer()->getParameter('kernel.project_dir').'/var/storage/uploads';
+        $before = self::files($directory);
+        $png = tempnam(sys_get_temp_dir(), 'parity');
+        $contents = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
+        $written = [];
+        try {
+            $this->compare('uploader-update', function (UnitOfWork $unitOfWork) use ($png, $contents): void {
+                $page = new Page('Une page', 'une-page');
+                $unitOfWork->persist($page);
+                $unitOfWork->flush();
+                $id = $page->getId();
+                $unitOfWork->clear();
+
+                $page = \Base\Database\UnitOfWorks::repositories($unitOfWork)->of(Page::class)->find($id);
+                file_put_contents($png, $contents);
+                $page->setThumbnail(new \SplFileInfo($png));
+                $unitOfWork->persist($page);
+                $unitOfWork->flush();
+                \PHPUnit\Framework\Assert::assertMatchesRegularExpression('/^[0-9a-f-]{36}$/', (string) (fn () => $this->thumbnail)->call($page), 'the stored file\'s name on the entity');
+            }, [Page::class], ['files' => function () use ($directory, $before, &$written): array {
+                $new = array_diff(self::files($directory), $before);
+                $contents = [];
+                foreach ($new as $file) {
+                    $contents[] = md5((string) file_get_contents($file));
+                    @unlink($file);
+                    $written[] = $file;
+                }
+                sort($contents);
+
+                return $contents;
+            }]);
+        } finally {
+            @unlink($png);
+            foreach (array_diff(self::files($directory), $before) as $file) {
+                @unlink($file);
+            }
+        }
+        self::assertNotEmpty($written, 'a file was written on each side');
+    }
+
+    /**
      * The scenario on both backends, its tables' rows compared.
      *
      * @param list<class-string>   $classes the entities whose tables (and join tables) the scenario writes

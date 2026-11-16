@@ -3,6 +3,8 @@
 namespace Omnibridge\Eloquent\Omnibase;
 
 use Base\Attributes\AttributeReader;
+use Base\Database\Repository\EntityRepositories;
+use Base\Database\Repository\ServiceEntityRepository;
 use Base\Database\Schema\EntitySchema;
 use Illuminate\Database\Connection;
 use Omnibridge\Eloquent\Cascades;
@@ -28,12 +30,13 @@ use Omnibridge\Persistence\Lifecycle\Listeners;
  *     $article = $persistence->repositories()->oneById(Article::class, 12);
  *
  * Options: EntitySchema's (project_dir, enumerations, types, resolve_target_entities, rules, column_types),
- * `directories` (more entity folders, a bundle's), `repositories` (an application's repositories on the store, by
- * entity: EloquentRepositories::register()) and `dispatcher` (the host's PSR-14 dispatcher, given the unit of work's
- * Lifecycle events), `lifecycle` (omnibase's behaviours and listeners on the unit of work: OmnibaseListeners'
- * options, step F7c) and `listeners` (the host's packages' listeners of those events, omnisense/omnibridge's
- * Lifecycle\Listeners: an iterable or a closure of callables, made at the first event, called after omnibase's - step B2). The associations cascade as their mapping and omnibase's #[Cascade] and #[OrphanRemoval] say
- * (OmnibaseCascades). The behaviours' parts are registered for the unit of work (EloquentBehaviours).
+ * `directories` (more entity folders, a bundle's), `repositories` (an application's repositories by entity, over those
+ * the mapping names: EntityRepositories::register()), `services` (a PSR-11 container: a repository's own services),
+ * `dispatcher` (the host's PSR-14 dispatcher, given the unit of work's Lifecycle events), `lifecycle` (omnibase's
+ * behaviours and listeners on the unit of work: OmnibaseListeners' options) and `listeners` (the host's packages'
+ * listeners of those events, Base\Contract\Lifecycle\Listeners::TAG: an iterable or a closure of callables, made at
+ * the first event, called after omnibase's). The associations cascade as their mapping and omnibase's #[Cascade] and
+ * #[OrphanRemoval] say (OmnibaseCascades). The behaviours' parts are registered for the unit of work (EloquentBehaviours).
  */
 final class EloquentPersistence
 {
@@ -41,7 +44,8 @@ final class EloquentPersistence
         private readonly EntityStore $store,
         private readonly EloquentUnitOfWork $unitOfWork,
         private readonly EloquentBackend $backend,
-        private readonly EloquentRepositories $repositories,
+        private readonly EloquentFinders $finders,
+        private readonly EntityRepositories $repositories,
     ) {
     }
 
@@ -60,7 +64,24 @@ final class EloquentPersistence
         $cascades->extend(OmnibaseCascades::resolver());
         $unitOfWork = new EloquentUnitOfWork($store, $dispatcher, $cascades);
 
-        $persistence = new self($store, $unitOfWork, new EloquentBackend($unitOfWork), new EloquentRepositories($store, $options['repositories'] ?? [], $unitOfWork));
+        $finders = new EloquentFinders($store, $unitOfWork);
+        $services = $options['services'] ?? null;
+        if (null !== $services && !$services instanceof ContainerInterface) {
+            throw new \InvalidArgumentException(sprintf('The option "services" is a %s, no PSR-11 container.', get_debug_type($services)));
+        }
+        $repositories = new EntityRepositories($finders, $services);
+        $registered = $options['repositories'] ?? [];
+        if (!\is_array($registered)) {
+            throw new \InvalidArgumentException(sprintf('The option "repositories" is a %s, not an array of repository classes by entity class.', get_debug_type($registered)));
+        }
+        foreach ($registered as $entity => $repository) {
+            /**
+             * @var class-string                                   $entity
+             * @var class-string<ServiceEntityRepository<object>> $repository register() refuses another
+             */
+            $repositories->register($entity, $repository);
+        }
+        $persistence = new self($store, $unitOfWork, new EloquentBackend($unitOfWork), $finders, $repositories);
         // The behaviours' parts (step F7c), asked through omnisense/omnibase's Backends by this unit of work.
         EloquentBehaviours::ensureRegistered();
         EloquentBehaviours::remember($persistence);
@@ -123,6 +144,7 @@ final class EloquentPersistence
         $lifecycle += ['empty_trash' => '+7 days', 'max_revisions' => 5];
         $withoutReader = !isset($lifecycle['attribute_reader']) && !AttributeReader::hasInstance();
         $options['lifecycle'] = $lifecycle;
+        $options['services'] ??= $services;
         $persistence = self::create($connection, $options, $description);
         if ($withoutReader) {
             $persistence->unitOfWork()->listen(static function (object $event): void {
@@ -149,6 +171,7 @@ final class EloquentPersistence
         $parameter = static fn (string $name, mixed $default = null): mixed => method_exists($container, 'hasParameter') && $container->hasParameter($name) ? $container->getParameter($name) : $default;
         // The host's services among those it defines: Omnibridge\Container answers has() for any class it could
         // autowire (a Connection, an empty Description...), which is not a service the application declared.
+        /** @var list<string>|null $defined */
         $defined = method_exists($container, 'ids') ? $container->ids() : null;
         $services = null === $defined ? $container : new class($container, $defined) implements ContainerInterface {
             /** @param list<string> $ids */
@@ -228,7 +251,14 @@ final class EloquentPersistence
         return $this->backend;
     }
 
-    public function repositories(): EloquentRepositories
+    /** What the core's repositories are built from: the host binds it as Base\Database\Repository\Finders. */
+    public function finders(): EloquentFinders
+    {
+        return $this->finders;
+    }
+
+    /** The core's Repositories over these finders: the host binds it as Base\Database\Repository\Repositories. */
+    public function repositories(): EntityRepositories
     {
         return $this->repositories;
     }

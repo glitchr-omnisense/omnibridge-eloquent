@@ -2,6 +2,8 @@
 
 namespace Omnibridge\Eloquent\Tests\Support;
 
+use Base\Database\Repository\Entities;
+use Base\Database\Repository\EntityRepositories;
 use Base\Entity\Analytics\PageView;
 use Base\Entity\Analytics\PageVisit;
 use Base\Entity\Analytics\Visit;
@@ -11,11 +13,12 @@ use Base\Repository\Analytics\PageVisits;
 use Base\Repository\Analytics\Visits;
 use Base\Repository\Layout\Redirections;
 use Doctrine\ORM\EntityManagerInterface;
+use Omnibridge\Doctrine\Omnibase\DoctrineFinders;
 use Omnibridge\Eloquent\Omnibase\EloquentPersistence;
 
 /**
- * The 14 repository methods no finder compiles (#[BackendOnly] on the core's interfaces, plan "omnibase agnostic",
- * step F7f), on omnibridge/doctrine and on omnibridge/eloquent, on the same database:
+ * The core's analytics and Redirections::hit() (once written per persistence, now written once in the core's
+ * language), on omnibridge/doctrine and on omnibridge/eloquent, on the same database:
  *
  * - reads(): the ten reads - the breakdowns, PageVisits::countUnique(), Visits::returning() - on the rows already there,
  *   for windows (all time, thirty days, the latest day with a row) and page filters (none, the most viewed page, a list
@@ -26,7 +29,7 @@ use Omnibridge\Eloquent\Omnibase\EloquentPersistence;
  *   identifiers: MySQL does not give back what a rolled-back insert took; the hit's moment to the minute) with the
  *   reads again on the window of the writes.
  */
-final class BackendWrittenParity
+final class AnalyticsParity
 {
     /** @return array<string, array{0: \Closure(): mixed, 1: \Closure(): mixed}> FinderParity::compare()'s scenarios */
     public static function reads(EntityManagerInterface $entityManager, EloquentPersistence $persistence, ?\DateTimeImmutable $from = null): array
@@ -205,14 +208,24 @@ final class BackendWrittenParity
         return ['reads' => $reads, 'writes' => $writes];
     }
 
-    /** @return array{0: \Closure(class-string): object, 1: \Closure(class-string): object} each side's repository of an interface */
+    /** @return array{0: \Closure(string): object, 1: \Closure(string): object} each side's repository of an interface */
     private static function sides(EntityManagerInterface $entityManager, EloquentPersistence $persistence): array
     {
         $entities = [PageViews::class => PageView::class, PageVisits::class => PageVisit::class, Visits::class => Visit::class, Redirections::class => Redirection::class];
+        // The same repository classes on both sides, each over its own Finders.
+        $doctrine = new EntityRepositories(DoctrineFinders::over($entityManager));
 
         return [
-            static fn (string $interface): object => $entityManager->getRepository($entities[$interface]),
-            static fn (string $interface): object => $persistence->repositories()->implementing($interface),
+            static function (string $interface) use ($doctrine, $entities): object {
+                \assert(is_a($interface, Entities::class, true));
+
+                return $doctrine->implementing($interface, $entities[$interface]);
+            },
+            static function (string $interface) use ($persistence): object {
+                \assert(is_a($interface, Entities::class, true));
+
+                return $persistence->repositories()->implementing($interface);
+            },
         ];
     }
 }

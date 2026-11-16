@@ -4,7 +4,8 @@ namespace Omnibridge\Eloquent;
 
 use Omnibridge\Eloquent\Omnibase\EloquentBackend;
 use Omnibridge\Eloquent\Omnibase\EloquentPersistence;
-use Omnibridge\Eloquent\Omnibase\EloquentRepositories;
+use Base\Database\Repository\EntityRepositories;
+use Omnibridge\Eloquent\Omnibase\EloquentFinders;
 
 /**
  * omnibridge/eloquent's services declared as data, for omnisense/omnibridge's Omnibridge\Container (plan "omnibase
@@ -32,10 +33,11 @@ final class Container
             ['class' => EloquentPersistence::class, 'factory' => [EloquentPersistence::class, 'fromContainer'], 'arguments' => ['@Psr\Container\ContainerInterface']],
             ['class' => EloquentUnitOfWork::class, 'factory' => [$persistence, 'unitOfWork'], 'contracts' => ['Omnibridge\Persistence\UnitOfWork', 'Omnibridge\Persistence\Snapshots']],
             ['class' => EloquentBackend::class, 'factory' => [$persistence, 'backend'], 'contracts' => ['Omnibridge\Persistence\Backend']],
-            ['class' => EloquentRepositories::class, 'factory' => [$persistence, 'repositories'], 'contracts' => ['Base\Database\Repository\Repositories']],
+            ['class' => EloquentFinders::class, 'factory' => [$persistence, 'finders'], 'contracts' => ['Base\Database\Repository\Finders']],
+            ['class' => EntityRepositories::class, 'factory' => [$persistence, 'repositories'], 'contracts' => ['Base\Database\Repository\Repositories']],
         ];
         foreach (self::interfaces() as $interface => $entity) {
-            $definitions[] = ['id' => $interface, 'class' => $interface, 'factory' => ['@'.EloquentRepositories::class, 'implementing'], 'arguments' => [$interface, $entity]];
+            $definitions[] = ['id' => $interface, 'class' => $interface, 'factory' => ['@'.EntityRepositories::class, 'implementing'], 'arguments' => [$interface, $entity]];
         }
 
         return $definitions;

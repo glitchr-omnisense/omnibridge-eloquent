@@ -4,8 +4,11 @@
 # fix one, then drop its entry.
 # tests/phpstan-bootstrap.php: the App\ classes omnibase's contracts name are the Base\ ones, aliased as at
 # run time (the core's own tests/phpstan-bootstrap.php does the same).
+# vendor/omnisense/omnibase/extension.neon: the finder language of the repositories (findByTitle()...) and the
+# entities' accessors, as an application includes it.
 includes:
     - phpstan-baseline.neon
+    - vendor/omnisense/omnibase/extension.neon
 
 parameters:
     level: max

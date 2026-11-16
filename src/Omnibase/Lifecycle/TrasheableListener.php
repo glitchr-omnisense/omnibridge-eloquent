@@ -5,6 +5,7 @@ namespace Omnibridge\Eloquent\Omnibase\Lifecycle;
 use Base\Database\Attribute\Trasheable;
 use Base\Database\Lifecycle\TrashRecorder;
 use DateTime;
+use Base\Database\Type\Utc;
 use DateTimeInterface;
 use Omnibridge\Eloquent\EloquentUnitOfWork;
 use Omnibridge\Eloquent\EntityMap;
@@ -57,7 +58,7 @@ final class TrasheableListener
                 continue;
             }
 
-            $deletedAt = new DateTime();
+            $deletedAt = DateTime::createFromImmutable(Utc::now());
             $store->setValue($entity, $field, $deletedAt);
 
             $unitOfWork->persist($entity);

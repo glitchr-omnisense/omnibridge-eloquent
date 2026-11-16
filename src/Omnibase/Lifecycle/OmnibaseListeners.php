@@ -94,7 +94,7 @@ final class OmnibaseListeners
         if ($entityDispatchers instanceof \Closure || $entityDispatchers instanceof \Traversable) {
             // A host's own dispatchers (its container's services, made on this unit of work: step F7d), read at the
             // first entity event - they live as long as the container that holds this persistence.
-            $self->add($unitOfWork, new EntityDispatchersListener($entityDispatchers, $unitOfWork));
+            $self->add($unitOfWork, new EntityDispatchersListener($entityDispatchers));
             $entityDispatchers = [];
         }
         foreach ($entityDispatchers as $entityDispatcher) {
@@ -108,7 +108,7 @@ final class OmnibaseListeners
             if (!$entityDispatcher instanceof AbstractEventDispatcher) {
                 throw new \InvalidArgumentException(sprintf('An entity dispatcher is an %s, not a %s.', AbstractEventDispatcher::class, get_debug_type($entityDispatcher)));
             }
-            $self->add($unitOfWork, new EntityDispatcherListener($entityDispatcher, $unitOfWork));
+            $self->add($unitOfWork, new EntityDispatcherListener($entityDispatcher));
         }
         if (isset($options['user_subscriber'])) {
             $self->add($unitOfWork, new PreFlushListener($options['user_subscriber']));

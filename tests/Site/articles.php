@@ -44,6 +44,11 @@ final class SiteLocales implements Omnibridge\Contract\Locales
     {
         return ['fr-FR'];
     }
+
+    public function getTimezone(): string
+    {
+        return 'UTC';
+    }
 }
 
 $container = Container::fromDefinitions([], [

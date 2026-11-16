@@ -41,6 +41,7 @@ class User
 
     public function getId(): ?int { return $this->id; }
     public function getEmail(): string { return $this->email; }
+    public function __toString(): string { return $this->email; }
     public function setScore(?float $score): static { $this->score = $score; return $this; }
     public function setBalance(?string $balance): static { $this->balance = $balance; return $this; }
     public function setVisits(int|string|null $visits): static { $this->visits = $visits; return $this; }

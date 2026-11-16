@@ -4,6 +4,7 @@ namespace Omnibridge\Eloquent\Tests\Support\Site;
 
 use Base\Database\Repository\Entities;
 use Base\Database\UnitOfWorks;
+use Base\Repository\Aliases;
 use Doctrine\ORM\EntityManagerInterface;
 use Omnibridge\Eloquent\Omnibase\EloquentPersistence;
 use Omnibridge\Persistence\UnitOfWork;
@@ -12,9 +13,10 @@ use Psr\Container\ContainerInterface;
 /**
  * One backend of the flows compared at step F7c (third part, tests/Site/FlowParityTest): its unit of work and its
  * repositories, what the services of a flow are made with - Doctrine's as omnibridge/symfony wires them (the
- * container's), or omnibridge/eloquent's on the same database with omnibase's lifecycle attached (OmnibaseHarness) and
- * lesringostars' two App repositories the flows reach (EloquentSubscribers, EloquentDestinations). Everything else a
- * service needs (the parameters, the notifier, the validator, the translator) is the container's on both.
+ * container's), or omnibridge/eloquent's on the same database with omnibase's lifecycle attached (OmnibaseHarness);
+ * the application's repositories are the same classes on both (App\Repository\*, over each side's Finders).
+ * Everything else a service needs (the parameters, the notifier, the validator, the translator) is the container's
+ * on both.
  */
 final class FlowSide
 {
@@ -33,9 +35,6 @@ final class FlowSide
 
     public static function eloquent(ContainerInterface $container, EloquentPersistence $persistence): self
     {
-        $persistence->repositories()->register('App\\Entity\\Newsletter\\Subscriber', EloquentSubscribers::class);
-        $persistence->repositories()->register('App\\Entity\\Destination\\Destination', EloquentDestinations::class);
-
         return new self('eloquent', $persistence->unitOfWork(), $container, $persistence);
     }
 
@@ -55,7 +54,16 @@ final class FlowSide
             return null !== $class && !$this->container->has($interface) ? UnitOfWorks::repositories($this->unitOfWork)->of($class) : $this->container->get($interface);
         }
 
-        return $this->persistence->repositories()->implementing($interface, $class);
+        if (isset(Aliases::INTERFACES[$interface])) {
+            return $this->persistence->repositories()->implementing($interface, $class);
+        }
+        // An application's interface: the entity of the repository the container binds to it, the same class here.
+        $repository = $this->persistence->repositories()->of($class ?? $this->container->get($interface)->getClassName());
+        if (!$repository instanceof $interface) {
+            throw new \LogicException(sprintf('The repository of %s on Eloquent (%s) is no %s.', $repository->getClassName(), $repository::class, $interface));
+        }
+
+        return $repository;
     }
 
     /** @template T of object @param class-string<T> $class @return T|null */

@@ -7,6 +7,7 @@ use Base\Database\Repository\Finder\Key;
 use Base\Database\Repository\Finder\Parser;
 use Base\Database\Repository\Finder\Query;
 use Base\Database\Repository\UnsupportedQueryException;
+use Base\Database\Type\Utc;
 use Base\Service\Model\IntlDateTime;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\JoinClause;
@@ -17,7 +18,7 @@ use Omnibridge\Schema\Relation;
 /**
  * omnibase's finder language on Illuminate's query builder (plan "omnibase agnostic", step F7b): the core's
  * Finder\Parser reads a finder's name and arguments (read()), this class compiles the Query into the store's query
- * of the class and runs it (execute()) - what omnibridge/doctrine's ServiceEntityParser does on Doctrine, word for
+ * of the class and runs it (execute()) - what omnibridge/doctrine's DqlCompiler does on Doctrine, word for
  * word, so that one name gives the same rows on both persistences (FinderParityTest):
  *
  * - every word of a criterion: EqualTo (= or IN for a list, an empty list no condition), NotEqualTo, GreaterThan,
@@ -120,6 +121,33 @@ class EloquentFinder
     }
 
     /**
+     * The identifiers of the rows the criteria select, as the finders select them (joins, the store's scopes, the
+     * discriminator): the SQL and its bindings, what the core's common SQL embeds as a selection (Finders::sql()).
+     *
+     * @internal
+     *
+     * @return array{0: string, 1: list<mixed>}
+     */
+    public function identifiers(array $criteria): array
+    {
+        $query = $this->read('findBy', [$criteria]);
+        $this->options = $query->options;
+        $this->separator = $query->separator;
+
+        try {
+            $compilation = $this->compile(\is_array($query->arguments[0] ?? null) ? $query->arguments[0] : []);
+            $compilation->finish();
+            $builder = $compilation->query;
+            $builder->select($this->map->idColumns()[0])->distinct();
+
+            return [$builder->toSql(), array_values($builder->getBindings())];
+        } finally {
+            $this->options = [];
+            $this->separator = null;
+        }
+    }
+
+    /**
      * A host's request for WithRoute: Symfony's Request or kernel event (their attributes' _route_params), Laravel's
      * Request (its route's parameters); false for anything else, which the Parser refuses.
      *
@@ -140,7 +168,7 @@ class EloquentFinder
         return false;
     }
 
-    // The internal requests, as ServiceEntityParser declares them (their arguments typed alike: a call that Doctrine's
+    // The internal requests, as DqlCompiler declares them (their arguments typed alike: a call that Doctrine's
     // refuses with a TypeError is refused here the same way).
 
     protected function __findBy(array $criteria = [], ?array $orderBy = null, $limit = null, $offset = null, ?array $groupBy = null, ?array $selectAs = null): ?FinderQuery
@@ -281,7 +309,7 @@ class EloquentFinder
         return $this->query($this->compile($criteria, $orderBy ?? [], $limit, $offset, $groupBy ?? [], $selectAs ?? []));
     }
 
-    /** ServiceEntityParser::getQueryWithCount(): the count alone (a number), or the grouped rows with theirs. */
+    /** DqlCompiler::getQueryWithCount(): the count alone (a number), or the grouped rows with theirs. */
     private function getQueryWithCount(array $criteria = [], ?string $mode = self::COUNT_ALL, ?array $orderBy = null, ?array $groupBy = null, ?array $selectAs = null): FinderQuery|int|string|null
     {
         if (self::COUNT_ALL == $mode) {
@@ -321,7 +349,7 @@ class EloquentFinder
         return $this->query($compilation);
     }
 
-    /** ServiceEntityParser::getQueryWithLength(): each row with the length of a field, or a collection's size. */
+    /** DqlCompiler::getQueryWithLength(): each row with the length of a field, or a collection's size. */
     private function getQueryWithLength(array $criteria = [], ?array $orderBy = null, $limit = null, $offset = null, ?array $groupBy = null, ?array $selectAs = null): FinderQuery
     {
         $column = (string) $this->subject->alias($this->column);
@@ -339,7 +367,7 @@ class EloquentFinder
     }
 
     /**
-     * ServiceEntityParser::getQueryBuilder(): the class's query (the store's: its tables, its columns, its conditions),
+     * DqlCompiler::getQueryBuilder(): the class's query (the store's: its tables, its columns, its conditions),
      * the criteria, the selected values, the order, the grouping, the limit and the offset.
      */
     private function compile(array $criteria = [], array $orderBy = [], $limit = null, $offset = null, array $groupBy = [], array $selectAs = []): Compilation
@@ -444,7 +472,7 @@ class EloquentFinder
         }
     }
 
-    /** ServiceEntityParser::where(): a criterion's condition added with the call's separator (none adds none). */
+    /** DqlCompiler::where(): a criterion's condition added with the call's separator (none adds none). */
     private function where(Compilation $compilation, mixed $condition): void
     {
         if (null === $condition || '' === $condition) {
@@ -491,7 +519,7 @@ class EloquentFinder
     }
 
     /**
-     * ServiceEntityParser::buildQueryExpr(): one criterion's condition, in the same order of decisions - the words,
+     * DqlCompiler::buildQueryExpr(): one criterion's condition, in the same order of decisions - the words,
      * the dates computed, a JSON field, the strings' patterns, the discriminator, an association (joined when its
      * column is compared, as Doctrine joins it), the comparison.
      *
@@ -547,6 +575,17 @@ class EloquentFinder
         }
 
         $isAssociation = $this->subject->isAssociation($fieldHead);
+        // An entity not written yet (persisted, not flushed: no identifier) is no row's: compared with it, nothing
+        // matches (NotEqualTo: everything), as Doctrine's finders answered "no row" before 6.0. A list keeps the others.
+        if (\in_array($tableOperator, [Parser::OPTION_EQUAL, Parser::OPTION_NOT_EQUAL], true) && !$isPartial) {
+            $unwritten = fn (mixed $value): bool => \is_object($value) && $this->isUnwritten($value);
+            if ($unwritten($fieldValue) || (\is_array($fieldValue) && [] !== $fieldValue && [] === array_filter($fieldValue, static fn (mixed $value): bool => !$unwritten($value)))) {
+                return Conditions::raw(Parser::OPTION_NOT_EQUAL === $tableOperator ? '1 = 1' : '1 = 0');
+            }
+            if (\is_array($fieldValue)) {
+                $fieldValue = array_filter($fieldValue, static fn (mixed $value): bool => !$unwritten($value));
+            }
+        }
         // The column compared, resolved when it is used: an association's is joined then, as Doctrine joins it.
         $column = function () use ($compilation, $fieldName, $fieldHead, $isAssociation): string {
             if ($isAssociation) {
@@ -574,7 +613,7 @@ class EloquentFinder
         $regexRequested = \in_array($tableOperator, [Parser::OPTION_STARTING_WITH, Parser::OPTION_ENDING_WITH, Parser::OPTION_NOT_STARTING_WITH, Parser::OPTION_NOT_ENDING_WITH], true);
 
         if ('json' === $this->subject->typeOf($fieldName, $this->store->mapping()->of(...))) {
-            return $this->jsonExpression($fieldName, $fieldValue, $tableOperator, $isInsensitive, $isEmpty || $isNotEmpty);
+            return $this->jsonExpression($fieldName, $fieldValue, $tableOperator, $isInsensitive, $isEmpty || $isNotEmpty, $isPartial);
         } elseif ($regexRequested) {
             // A literal prefix or suffix: its "%", "_" and "!" escaped with "!", which the LIKE names (ESCAPE '!') - the same
             // on every platform, where "_" was escaped as "\_" with no ESCAPE clause, which SQLite does not read.
@@ -597,9 +636,6 @@ class EloquentFinder
         $bound = null;
         $noParameter = $isEmpty || $isNotEmpty || $isBool || $isNull || $isNotNull;
         if ($isAssociation) {
-            if ($isPartial) {
-                throw new UnsupportedQueryException(sprintf('A Partial criterion on the association %s::$%s is not compiled: omnibridge/doctrine binds it under a name its expression does not use, and Doctrine refuses the query too.', $this->map->className(), $fieldHead));
-            }
             if (!\is_array($fieldValue)) {
                 $columnSql = $column();
                 if (!$noParameter) {
@@ -634,11 +670,18 @@ class EloquentFinder
             if (Parser::OPTION_EQUAL != $tableOperator && Parser::OPTION_NOT_EQUAL != $tableOperator) {
                 throw new \Exception('Invalid operator for association field "'.$fieldName.'": '.$tableOperator);
             }
+            $like = Parser::OPTION_EQUAL == $tableOperator ? ' LIKE ?' : ' NOT LIKE ?';
             if (\is_array($fieldValue)) {
-                throw new UnsupportedQueryException(sprintf('A Partial criterion compares one value, not a list ("%s"): omnibridge/doctrine compiles a list to an expression of its parameters\' names, which Doctrine refuses too.', $fieldName));
+                // A list: any of the patterns (LIKE ... OR LIKE ...), none of them for NotEqualTo; an empty list, no row.
+                /** @var list<mixed> $bound the list's parameters */
+                if ([] === $bound) {
+                    return Conditions::raw('1 = 0');
+                }
+
+                return Conditions::raw('('.implode(Parser::OPTION_EQUAL == $tableOperator ? ' OR ' : ' AND ', array_fill(0, \count($bound), $sql().$like)).')', $bound);
             }
 
-            return Conditions::raw($sql().(Parser::OPTION_EQUAL == $tableOperator ? ' LIKE ?' : ' NOT LIKE ?'), [$bound]);
+            return Conditions::raw($sql().$like, [$bound]);
         } elseif (\is_array($fieldValue)) {
             if (Parser::OPTION_EQUAL == $tableOperator) {
                 $not = false;
@@ -650,7 +693,7 @@ class EloquentFinder
             if (empty($fieldValue)) {
                 return Conditions::raw('1 = 1');
             }
-
+            /** @var list<mixed> $bound the list's parameters */
             return Conditions::raw($sql().($not ? ' NOT IN (' : ' IN (').implode(', ', array_fill(0, \count($bound), '?')).')', $bound);
         } elseif ($regexRequested) {
             $like = \in_array($tableOperator, [Parser::OPTION_STARTING_WITH, Parser::OPTION_ENDING_WITH], true) ? " LIKE ? ESCAPE '!'" : " NOT LIKE ? ESCAPE '!'";
@@ -688,7 +731,7 @@ class EloquentFinder
     }
 
     /**
-     * The bound of a date criterion, as ServiceEntityParser computes it: now for IsOver, IsNotOver; a date given as
+     * The bound of a date criterion, as DqlCompiler computes it: now (the application's clock, UTC) for IsOver, IsNotOver; a date given as
      * text read as one; an age (YoungerThan, OlderThan: "+2 days", 172800 seconds) counted back from now, Within's
      * offset forward, to the minute.
      */
@@ -702,10 +745,10 @@ class EloquentFinder
         }
 
         if (\in_array($operator, [Parser::OPTION_OVER, Parser::OPTION_NOT_OVER], true)) {
-            return new \DateTime('now');
+            return \DateTime::createFromImmutable(Utc::now()); // the application's clock, in UTC
         }
         if (!$fieldValue instanceof \DateTime && self::validateDate($fieldValue)) {
-            return new \DateTime($fieldValue);
+            return new \DateTime($fieldValue, Utc::zone());
         }
         if (!$fieldValue instanceof \DateTime) {
             $offset = $fieldValue;
@@ -713,7 +756,7 @@ class EloquentFinder
                 $offset = strtr($fieldValue, ['+' => '-', '-' => '+']);
             }
 
-            return round_datetime((new \DateTime('now'))->modify($offset), '+1 minute');
+            return round_datetime(\DateTime::createFromImmutable(Utc::now())->modify($offset), '+1 minute');
         }
 
         return $fieldValue;
@@ -727,17 +770,29 @@ class EloquentFinder
     }
 
     /**
-     * A JSON field, as ServiceEntityParser compares one: a list, each value JSON_CONTAINS()ed (AND; NOT for
+     * A JSON field, as DqlCompiler compares one: a list, each value JSON_CONTAINS()ed (AND; NOT for
      * NotEqualTo; LOWER() for Insensitive), an empty list no condition; one value JSON_CONTAINS()ed as it is given.
      * On SQLite (no JSON_CONTAINS) a value of the array: json_each(). Empty, NotEmpty: refused as Doctrine's
      * compiler refuses them.
      */
-    private function jsonExpression(string $fieldName, mixed $fieldValue, string $tableOperator, bool $isInsensitive, bool $emptiness): \Closure
+    private function jsonExpression(string $fieldName, mixed $fieldValue, string $tableOperator, bool $isInsensitive, bool $emptiness, bool $isPartial = false): \Closure
     {
         if (str_contains($fieldName, '.')) {
             throw new UnsupportedQueryException(sprintf('The JSON field "%s" is compared through a path: not compiled.', $fieldName));
         }
         $column = $this->wrap($this->map->column($fieldName));
+        if ($isPartial) {
+            // Partial on a JSON field: a LIKE on its text (any of the patterns; none of them with NotEqualTo), as on Doctrine.
+            $parts = [];
+            foreach (\is_array($fieldValue) ? array_values($fieldValue) : [$fieldValue] as $pattern) {
+                $parts[] = Conditions::raw($isInsensitive ? 'LOWER('.$column.') LIKE LOWER(?)' : $column.' LIKE ?', [(string) $pattern]);
+            }
+            if ([] === $parts) {
+                return Conditions::raw('1 = 1');
+            }
+
+            return Parser::OPTION_NOT_EQUAL === $tableOperator ? Conditions::not(Conditions::any($parts)) : Conditions::any($parts);
+        }
         $contains = function (string $value, bool $lower) use ($column): \Closure {
             if (\in_array($this->driver(), ['mysql', 'mariadb'], true)) {
                 return $lower
@@ -816,7 +871,7 @@ class EloquentFinder
         if (null !== $this->map->inheritance) {
             foreach ($fieldValue as $value) {
                 [$class, $reverse] = $this->classOfValue($value);
-                // The class's own rows: its instances but its children's, as ServiceEntityParser writes it (INSTANCE OF
+                // The class's own rows: its instances but its children's, as DqlCompiler writes it (INSTANCE OF
                 // the class AND NOT INSTANCE OF each class of the map below it).
                 $this->store->mapping()->of($class);
                 $values = $this->instanceValues($class);
@@ -989,6 +1044,22 @@ class EloquentFinder
         return $value;
     }
 
+    /** Whether an object is an entity of the store with no identifier yet (persisted, not flushed). */
+    private function isUnwritten(object $value): bool
+    {
+        $map = $this->mapOfObject($value);
+        if (null === $map || 1 !== \count($map->identifier)) {
+            return false;
+        }
+        $field = $map->identifier[0];
+        $property = new \ReflectionProperty($field->declaredIn ?? $map->className(), $field->property);
+        if ((new \ReflectionClass($value))->isUninitializedLazyObject($value)) {
+            return false;
+        }
+
+        return !$property->isInitialized($value) || null === $property->getRawValue($value);
+    }
+
     /** The map of an entity's class, through its parents (a Doctrine proxy's); null for an object that is no entity. */
     private function mapOfObject(object $value): ?EntityMap
     {
@@ -1015,11 +1086,50 @@ class EloquentFinder
         if (1 === \count($path)) {
             return $this->wrap($target->idColumns($prefix)[0]);
         }
+        // A to-many association at the path's end ("groups.members" => $user): a member's identifier, through the end's
+        // join table (a many-to-many) or the members' own key (a one-to-many), as Doctrine's MEMBER OF reads it.
+        $end = $target->entity->relations[$path[1]] ?? null;
+        if (null !== $end && !$end->isToOne()) {
+            return $this->wrap($this->memberColumn($compilation, $fieldName, $prefix, $target, $end));
+        }
         if (!$target->hasColumn($path[1])) {
             throw new UnsupportedQueryException(sprintf('%s has no field or owning to-one association "%s" (in "%s").', $target->className(), $path[1], $fieldName));
         }
 
         return $this->wrap($target->column($path[1], $prefix));
+    }
+
+    /** The column of a to-many end's member identifier, joined once per path (memberColumn of joinedColumn()). */
+    private function memberColumn(Compilation $compilation, string $fieldName, string $prefix, EntityMap $target, Relation $end): string
+    {
+        if (isset($compilation->joins[$fieldName])) {
+            return $compilation->joins[$fieldName][0];
+        }
+        $member = $this->store->mapping()->of($end->target);
+        $alias = $prefix.'m';
+        $targetId = $prefix.'0.'.$target->identifier[0]->column;
+        if (Relation::MANY_TO_MANY === $end->kind) {
+            if ($end->owning) {
+                $joinTable = $end->joinTable ?? throw new \LogicException(sprintf('%s::$%s has no join table.', $target->className(), $end->property));
+                [$ownerColumn, $memberColumn] = [$joinTable->joinColumns[0]->name, $joinTable->inverseJoinColumns[0]->name];
+            } else {
+                $owning = $member->entity->relations[(string) $end->mappedBy] ?? throw new \LogicException(sprintf('%s::$%s is mapped by no association of %s.', $target->className(), $end->property, $member->className()));
+                $joinTable = $owning->joinTable ?? throw new \LogicException(sprintf('%s::$%s has no join table.', $member->className(), $owning->property));
+                [$ownerColumn, $memberColumn] = [$joinTable->inverseJoinColumns[0]->name, $joinTable->joinColumns[0]->name];
+            }
+            $compilation->query->leftJoin($joinTable->name.' as '.$alias, $alias.'.'.$ownerColumn, '=', $targetId);
+            $column = $alias.'.'.$memberColumn;
+        } else {
+            $mappedBy = (string) $end->mappedBy;
+            if (!$member->hasColumn($mappedBy) || $member->tableOf($mappedBy) !== $member->tables[0]) {
+                throw new UnsupportedQueryException(sprintf('"%s" ends on %s::$%s, mapped by a key not in the root table of %s: not joined.', $fieldName, $target->className(), $end->property, $member->className()));
+            }
+            $compilation->query->leftJoin($member->tables[0].' as '.$alias, $member->column($mappedBy, $alias), '=', $targetId);
+            $column = $alias.'.'.$member->identifier[0]->column;
+        }
+        $compilation->joins[$fieldName] = [$column, $member];
+
+        return $column;
     }
 
     private function joinedIdentifier(Compilation $compilation, string $association): string
@@ -1132,7 +1242,7 @@ class EloquentFinder
         return '(SELECT COUNT(*) FROM '.$this->wrapTable($table).' AS '.$this->wrap('size_t').' WHERE '.$this->wrap('size_t.'.$keyColumn).' = '.$ownerId.')';
     }
 
-    /** ServiceEntityParser::selectAs(): each value selected under its name (an expression of Expressions). */
+    /** DqlCompiler::selectAs(): each value selected under its name (an expression of Expressions). */
     private function selectAs(Compilation $compilation, array $selectAs): void
     {
         foreach ($selectAs as $select => $as) {
@@ -1152,7 +1262,7 @@ class EloquentFinder
     }
 
     /**
-     * ServiceEntityParser::orderBy(): a field (its alias read), an association's field (joined), a ClosestTo's distance,
+     * DqlCompiler::orderBy(): a field (its alias read), an association's field (joined), a ClosestTo's distance,
      * a list of values (FIELD()), id => "rand" (RAND(), the terms before it dropped), a selected value's name, an
      * expression.
      *
@@ -1182,9 +1292,7 @@ class EloquentFinder
                 }
                 $sql = $this->wrap($this->map->column($entity));
             } elseif ($this->subject->isAssociation($entity)) {
-                if (1 === \count($path)) {
-                    throw new UnsupportedQueryException(sprintf('An order on the association %s::$%s itself: order on one of its fields ("%s.<field>").', $this->map->className(), $entity, $entity));
-                }
+                // The association itself ("album" => ASC, an admin's sort on its column): its target's identifier, as Doctrine's.
                 $sql = $this->joinedColumn($compilation, $name);
             } elseif (isset($compilation->named[$name])) {
                 $sql = $compilation->named[$name];
@@ -1205,7 +1313,7 @@ class EloquentFinder
     }
 
     /**
-     * ServiceEntityParser::groupBy(): each field (its alias read), an association by its target's identifier (joined,
+     * DqlCompiler::groupBy(): each field (its alias read), an association by its target's identifier (joined,
      * and selected under its name), a path's field, an expression.
      */
     private function groupBy(Compilation $compilation, array $groupBy): void

@@ -11,7 +11,8 @@ use Omnibridge\Eloquent\EloquentUnitOfWork;
 use Omnibridge\Eloquent\EntityStore;
 use Omnibridge\Eloquent\Mapping;
 use Omnibridge\Eloquent\Omnibase\EloquentBackend;
-use Omnibridge\Eloquent\Omnibase\EloquentRepositories;
+use Base\Database\Repository\EntityRepositories;
+use Omnibridge\Eloquent\Omnibase\EloquentFinders;
 use Omnibridge\Eloquent\Omnibase\OmnibaseCasts;
 use Omnibridge\Eloquent\Tests\Fixtures\Entity\Article;
 use Omnibridge\Eloquent\Tests\Fixtures\Entity\Thread;
@@ -73,7 +74,7 @@ final class OmnibasePartTest extends TestCase
 
     public function testTheRepositoriesReadACriteriaArrayAndRefuseToWrite(): void
     {
-        $repositories = new EloquentRepositories($this->store);
+        $repositories = new EntityRepositories(new EloquentFinders($this->store));
         $threads = $repositories->of(Thread::class);
         $alice = $repositories->oneById(User::class, $this->ids['alice']);
         self::assertSame(['One', 'Three'], array_map(static fn (Thread $thread): string => $thread->getTitle(), $threads->findBy(['author' => $alice], ['title' => 'ASC'])));
@@ -83,9 +84,11 @@ final class OmnibasePartTest extends TestCase
         self::assertSame(1, $threads->count(['title' => ['One', 'Nope']]));
         self::assertSame('Two', $threads->findOneBy(['title' => 'Two'])?->getTitle());
         self::assertNull($threads->findOneBy(['parent' => 1]));
-        self::assertSame([], $threads->findBy(['parent' => null]), 'null compares `= NULL`, as omnibase\'s finder (ServiceEntityRepository::findBy()) compares it');
+        self::assertCount(3, $threads->findBy(['parent' => null]), 'null is IS NULL');
+        self::assertSame([], $threads->findBy(['id' => []]), 'an empty list matches nothing');
+        self::assertSame(0, $threads->count(['id' => []]));
         self::assertCount(3, $threads->findByParentNull()->getResult());
-        self::assertSame([$this->ids['two'], $this->ids['one']], array_map(static fn (Thread $thread): ?int => $thread->getId(), $repositories->byIds(Thread::class, [$this->ids['two'], $this->ids['one']])));
+        self::assertSame([$this->ids['one'], $this->ids['two']], array_map(static fn (Thread $thread): ?int => $thread->getId(), $repositories->byIds(Thread::class, [$this->ids['two'], $this->ids['one']])), 'byIds: the rows in the table\'s order (cacheById)');
         self::assertSame(['Two', 'Three'], array_map(static fn (Thread $thread): string => $thread->getTitle(), $threads->findBy([], ['title' => 'DESC'], 2)));
         $this->expectException(UnsupportedPersistence::class);
         $threads->persist($alice, true);

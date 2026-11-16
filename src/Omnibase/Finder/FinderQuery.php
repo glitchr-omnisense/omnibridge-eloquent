@@ -2,13 +2,13 @@
 
 namespace Omnibridge\Eloquent\Omnibase\Finder;
 
-use Base\Service\Model\Pages;
+use Base\Database\Repository\Finder\Result;
 use Illuminate\Database\Query\Builder;
 use Omnibridge\Eloquent\EntityMap;
 use Omnibridge\Eloquent\EntityStore;
 
 /**
- * What a finder hands back where omnibridge/doctrine hands back Doctrine's Query (findBy...(), findAll(),
+ * A finder's result on Eloquent, the core's Finder\Result (findBy...(), findAll(),
  * findLast...(), findAtMost...(), findPrevious...(), findNext...(), findRandomly...()): the compiled query, run
  * when its result is asked - getResult(), getOneOrNullResult() -, as often as it is asked.
  *
@@ -21,10 +21,8 @@ use Omnibridge\Eloquent\EntityStore;
  * It is also omnibase's Pages (Base\Service\Model\Pages: what Paginator::paginate() and Pagination page through, where
  * omnibridge/doctrine adapts Doctrine's Query with QueryPages): the entities counted once each, a page of them by
  * the query's own order (plan "omnibase agnostic", step F7d-2: a records picker's pages, RemoteSearch).
- *
- * @implements \IteratorAggregate<int, mixed>
  */
-final class FinderQuery implements \IteratorAggregate, Pages
+final class FinderQuery implements Result
 {
     private ?int $count = null;
 
@@ -40,6 +38,12 @@ final class FinderQuery implements \IteratorAggregate, Pages
 
     /** @return list<mixed> */
     public function getResult(): array
+    {
+        return array_values(DatabaseErrors::reading($this->read(...)));
+    }
+
+    /** @return array<int, mixed> */
+    private function read(): array
     {
         $results = [];
         $seen = [];
@@ -70,6 +74,34 @@ final class FinderQuery implements \IteratorAggregate, Pages
         }
 
         return $results[0] ?? null;
+    }
+
+    /** The one value of the one row; no row or more than one refused, as Doctrine's getSingleScalarResult() does. */
+    public function getSingleScalarResult(): mixed
+    {
+        $rows = $this->getArrayResult();
+        if (1 !== \count($rows)) {
+            throw new \UnexpectedValueException([] === $rows ? 'No result was found for query although at least one row was expected.' : 'More than one result was found for query although one row or none was expected.');
+        }
+        $row = $rows[0];
+        if (1 !== \count($row)) {
+            throw new \UnexpectedValueException('The query returned a row containing multiple columns. Change the query or use a different result function like getArrayResult().');
+        }
+
+        return reset($row);
+    }
+
+    /** @return list<array<string, mixed>> the rows as the database gives them, no entity made */
+    public function getArrayResult(): array
+    {
+        /** @var list<array<string, mixed>> */
+        return array_values(array_map(static fn (object|array $row): array => (array) $row, DatabaseErrors::reading(fn (): array => $this->query->get()->all())));
+    }
+
+    /** @return iterable<int, mixed> */
+    public function toIterable(): iterable
+    {
+        yield from $this->getResult();
     }
 
     /** The SQL Illuminate runs (its placeholders), for a test or a log. */
@@ -116,7 +148,7 @@ final class FinderQuery implements \IteratorAggregate, Pages
         $ids->columns = null;
         $ids->select($this->map->idColumns())->distinct();
 
-        return $this->count = $this->query->newQuery()->fromSub($ids, 'omnibridge_pages')->count();
+        return $this->count = DatabaseErrors::reading(fn (): int => $this->query->newQuery()->fromSub($ids, 'omnibridge_pages')->count());
     }
 
     /**
@@ -141,7 +173,7 @@ final class FinderQuery implements \IteratorAggregate, Pages
         $columns = $this->map->idColumns();
         $ids->select($columns);
         $found = [];
-        foreach ($ids->get() as $row) {
+        foreach (DatabaseErrors::reading(static fn () => $ids->get()) as $row) {
             $row = array_values((array) $row);
             $found[implode("\0", array_map('strval', $row))] ??= $row;
         }

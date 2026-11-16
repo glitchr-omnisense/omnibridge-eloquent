@@ -76,7 +76,7 @@ final class EntitySubject implements Subject
 
     /**
      * The property a name gives (an alias, a column, a field, an association), the name itself when it is none -
-     * ServiceEntityParser::getAlias().
+     * DqlCompiler::getAlias().
      */
     public function alias(?string $name): ?string
     {

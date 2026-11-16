@@ -256,7 +256,9 @@ final class AttributeRelay
     private function changeSet(EloquentUnitOfWork $unitOfWork, object $entity): array
     {
         $changeSet = $unitOfWork->changes($entity);
-        if (empty($changeSet) && !$entity->getId()) {
+        // No identifier yet, read through the mapping (an entity with a public $id and no getter is any entity).
+        $identifier = $unitOfWork->store()->identifier($entity);
+        if (empty($changeSet) && [] === array_filter((array) $identifier, static fn (mixed $value): bool => null !== $value)) {
             $changeSet = cast_to_array($entity);
         }
 

@@ -14,6 +14,7 @@ use Base\Database\Backend\EntityCache;
 use Base\Database\Backend\RowLocks;
 use Base\Database\Mapping\DescriptionShapes;
 use Base\Database\Mapping\EntityShapes;
+use Base\Database\Repository\EntityRepositories;
 use Base\Database\Repository\Repositories;
 use Omnibridge\Eloquent\EloquentUnitOfWork;
 use Omnibridge\Eloquent\Omnibase\Behaviour\EloquentBulkDeletes;
@@ -26,6 +27,7 @@ use Omnibridge\Eloquent\Omnibase\Behaviour\EloquentRowLocks;
 use Omnibridge\Eloquent\Omnibase\Behaviour\EloquentSlugifyBackend;
 use Omnibridge\Eloquent\Omnibase\Behaviour\EloquentVaultBackend;
 use Omnibridge\Persistence\Backend;
+use Omnibridge\Persistence\UnitOfWork;
 
 /**
  * The behaviours' parts on omnibridge/eloquent (plan "omnibase agnostic", step F7c), registered for EloquentUnitOfWork
@@ -62,7 +64,12 @@ final class EloquentBehaviours
         }
         Backends::register(EloquentUnitOfWork::class, EntityShapes::class, static fn (EloquentUnitOfWork $unitOfWork) => new DescriptionShapes($unitOfWork->store()->mapping()->description));
         Backends::register(EloquentUnitOfWork::class, Backend::class, static fn (EloquentUnitOfWork $unitOfWork) => self::persistence($unitOfWork)?->backend() ?? new EloquentBackend($unitOfWork));
-        Backends::register(EloquentUnitOfWork::class, Repositories::class, static fn (EloquentUnitOfWork $unitOfWork) => self::persistence($unitOfWork)?->repositories() ?? new EloquentRepositories($unitOfWork->store(), [], $unitOfWork));
+        Backends::register(EloquentUnitOfWork::class, Repositories::class, static function (UnitOfWork $unitOfWork): Repositories {
+            \assert($unitOfWork instanceof EloquentUnitOfWork);
+
+            // A unit of work no persistence remembers (made by hand): the core's repositories over its store.
+            return self::persistence($unitOfWork)?->repositories() ?? new EntityRepositories(new EloquentFinders($unitOfWork->store(), $unitOfWork));
+        });
     }
 
     public static function ensureRegistered(): void

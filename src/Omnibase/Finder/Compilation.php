@@ -7,7 +7,7 @@ use Omnibridge\Eloquent\EntityMap;
 
 /**
  * One finder query being compiled (EloquentFinder): the class's query from the store, the associations joined
- * (once each, as ServiceEntityParser's join list keeps them), the condition the criteria make - folded as
+ * (once each, as DqlCompiler's join list keeps them), the condition the criteria make - folded as
  * Doctrine's QueryBuilder folds andWhere()/orWhere(), each call wrapping what came before -, the order, the
  * grouping and the selected values besides the entity's columns, in the order a mixed result lists them.
  *

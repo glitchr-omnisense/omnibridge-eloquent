@@ -4,7 +4,7 @@ namespace Omnibridge\Eloquent\Omnibase\Finder;
 
 /**
  * An order a criterion makes instead of a condition: ClosestTo and FarestTo, `ABS(x - ?)` ascending or descending,
- * appended to the call's order as ServiceEntityParser appends it.
+ * appended to the call's order as DqlCompiler appends it.
  *
  * @internal
  */

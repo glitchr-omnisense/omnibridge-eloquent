@@ -9,7 +9,7 @@ omnibase's finder language - `findOneByEmailOrUsername()`, `cacheOneByStateAndSl
 `countForParentByState()`, `lengthOfTagsBy()`, `sumOfViewsByDateGreaterEqualTo()`... - is the core's: its
 `Base\Database\Repository\Finder\Parser` reads a method's name and arguments into a neutral `Query`. A persistence only
 compiles that query. `EloquentFinder` compiles it onto Illuminate's query builder, as omnibridge/doctrine's
-`ServiceEntityParser` compiles it to DQL, so that one name gives the same rows on both. `FinderParityTest` compares the
+`DqlCompiler` compiles it to DQL, so that one name gives the same rows on both. `FinderParityTest` compares the
 two on the same database.
 
 ```php
@@ -34,7 +34,7 @@ $threads->findBy(['parent' => Key::of($thread), Group::by('SlugStartingWithOrSlu
 | An association, or a path through one (`translatable.state`, `tags.slug`) | A `LEFT JOIN` of it, once. A to-one is joined on its foreign key, a one-to-many or an inverse one-to-one on the target's key, a many-to-many through its join table. The store's conditions (the trash and vault scopes) go into the join's `ON`, and so does a subclass target's discriminator, as Doctrine's SQL filters do. A Translatable's `translations` are joined on the translation's own `translatable_id`, in the root table of its hierarchy (what `TranslatableWalker` rewrites on Doctrine). |
 | `Key::of($entity \| $id \| list \| null)` | The row's own foreign key, with no join (`= ?`, `IN`, `IS NULL`) |
 | `Group::by('AOrB', ...)` | Its members in parentheses, joined by its separator |
-| find, One, All, Randomly, AtMost<N>, Last<N>, LastOne, Previous<N>, PreviousOne, Next<N>, NextOne | The same internal requests and arguments as `ServiceEntityParser`'s (a call Doctrine refuses with a `TypeError` is refused the same way) |
+| find, One, All, Randomly, AtMost<N>, Last<N>, LastOne, Previous<N>, PreviousOne, Next<N>, NextOne | The same internal requests and arguments as `DqlCompiler`'s (a call Doctrine refuses with a `TypeError` is refused the same way) |
 | count, distinctCount, countFor<Column> | `COUNT(x)`, `COUNT(DISTINCT x)`. Grouped (groupBy or selectAs), the rows `['entity' => ..., <group> => ..., 'count' => ...]` |
 | lengthOf<Column> | `LENGTH(x)`, or a collection's size (a subquery counting its join table or target rows) |
 | sumOf, minOf, maxOf | `SUM()`, `MIN()`, `MAX()` of a field: the database's value, null without a row |
@@ -53,31 +53,31 @@ values as the database gives them, in the order Doctrine selects them.
 - **MemberOf**: omnibridge/doctrine writes `e MEMBER OF <class>`, which DQL refuses too.
 - **A Partial criterion on an association, or Partial on a list**: Doctrine binds it under a name its expression does
   not use, and refuses the query.
-- **A path through more than one association**, a field the entity does not have, an order on an association itself.
+- **A field the entity does not have**, an order on an association itself. (A path through several associations is
+  read by the core's repository: criteria, groups and orders.)
 - **A JSON field compared through a path**, or Insensitive on one JSON value.
 - **An expression `Expressions` does not translate**: a parameter, another function, a name that is no field.
 
-The 14 methods declared `#[BackendOnly(['doctrine', 'eloquent'])]` on the core's interfaces are no finder: the
-analytics' upserts, `INSERT IGNORE` and breakdowns, `Redirections::hit()`'s bulk UPDATE. Each persistence writes them;
-here they are omnibridge/doctrine's statements sent through Illuminate's connection (`Repository\Analytics\Statements`:
-the table wrapped by the grammar, positional bindings, MySQL's or SQLite's form by the driver), and `hit()` one
-`UPDATE ... SET hits = hits + 1` on the row - the same rows (tests/Harness and tests/Site `BackendWrittenParityTest`).
+The core's analytics and `Redirections::hit()` are written once in the language (`findValuesBy()`, `updateBy()` with
+`Change::add()`, an INSERT through `sql()`): the same rows on both engines.
 
 What Doctrine refuses with its own message (an AND/OR ambiguity, an operator a list does not take, an Older/Younger
 date) is refused with the same message.
 
 ## The repositories
 
-`EloquentEntities` is the base of every repository on the store. It provides `find()`, `findAll()`, `findBy()`,
-`findOneBy()`, `count()` and `findByExample()` through the finder, and `__call()` for the language.
-`EloquentRepositories::of($class)` gives the core's repository on Eloquent for its entity and the entity's subclasses
-(`Repository\*`, one per interface of `Base\Repository\Aliases::INTERFACES`: `Threads`, `Users`, `Comments`, `Tags`,
-`ThreadTranslations`, the analytics, the hours...). An application registers its own with `register()`, and any other
-class gets the plain `EloquentEntities`; `register($entity, $class, $factory)` makes it with a factory when it needs more
-than the store (lesringostars' comments' counts take a cache). `implementing($interface)` gives the repository of a
-core interface: the one that declares it before a registered subclass that only inherits it (an application's
-`ArticleRepository`, an `Articles` and so a `Threads`, does not answer `Threads`). Writes
-(`persist`, `remove`, `flush`, `ScopedWeeks::save()`...) go through the unit of work ([Writing entities](writing.md)).
+There is no repository class here. Every repository is the core's agnostic parent
+(`Base\Database\Repository\ServiceEntityRepository`) or a class over it - `Base\Repository\*`, a bundle's,
+`App\Repository\*` -, the same class on Doctrine and on Eloquent, built from `Base\Database\Repository\Finders`.
+`EloquentFinders::of($class)` is the engine of one entity class (`Finder\EloquentEngine`: `find()`, the criteria array
+of `findBy()`/`findOneBy()`/`count()`, and every named finder through `EloquentFinder`); `sql()` runs the core's common
+SQL around the engine's selection; `unitOfWork()` takes the writes (`persist`, `remove`, `flush`,
+`ScopedWeeks::save()`... - [Writing entities](writing.md)). The core's `EntityRepositories` gives the repository of any
+class (`repositories()->of($class)`), with the language even for an entity without a repository class.
+
+Every query of an application or a bundle is written once, in its repository (findValuesBy(), updateBy(), deleteBy(),
+lockOneBy(), the relational criteria, Field::of(), sql() for an order on an expression): nothing is written per
+persistence.
 
 ## Known differences with omnibridge/doctrine
 

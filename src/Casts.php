@@ -15,9 +15,9 @@ use Omnibridge\Schema\Database\ColumnTypes;
  *   as [] as DBAL reads it), the dates
  *   (datetime, datetimetz, date, time and their _immutable, in PHP's
  *   default zone as DBAL reads them), binary and blob (kept as they come);
- * - utc(): datetime and datetimetz read and written in UTC, and utc_datetime,
- *   utc_datetime_immutable - omnibridge/doctrine's Types::register(), which
- *   omnibase sites run on;
+ * - utc(): datetime, datetimetz and their _immutable read and written in UTC,
+ *   and utc_datetime, utc_datetime_immutable - omnibridge/doctrine's
+ *   Types::register(), which omnibase sites run on (one time: UTC);
  * - an application's own types: a conversion given by name (with()), else what
  *   its ColumnTypes say - an alias followed to its portable type, an
  *   enumeration's value as the string it is, a set's values as a list.
@@ -43,7 +43,7 @@ final class Casts
     ) {
     }
 
-    /** The conversions of an omnibase site: datetime and datetimetz in UTC, the utc_ types (omnibridge/doctrine's Types::register()). */
+    /** The conversions of an omnibase site: datetime, datetimetz and their _immutable in UTC, the utc_ types (omnibridge/doctrine's Types::register()). */
     public static function utc(?ColumnTypes $columnTypes = null): self
     {
         return new self($columnTypes, true);
@@ -116,7 +116,7 @@ final class Casts
             'datetime', 'datetimetz' => $this->utc ? self::utcDateTime((string) $value) : self::date(\DateTime::class, self::DATETIME, (string) $value),
             'utc_datetime' => self::utcDateTime((string) $value),
             'utc_datetime_immutable' => \DateTimeImmutable::createFromMutable(self::utcDateTime((string) $value)),
-            'datetime_immutable', 'datetimetz_immutable' => self::date(\DateTimeImmutable::class, self::DATETIME, (string) $value),
+            'datetime_immutable', 'datetimetz_immutable' => $this->utc ? \DateTimeImmutable::createFromMutable(self::utcDateTime((string) $value)) : self::date(\DateTimeImmutable::class, self::DATETIME, (string) $value),
             'date' => self::date(\DateTime::class, '!Y-m-d', (string) $value),
             'date_immutable' => self::date(\DateTimeImmutable::class, '!Y-m-d', (string) $value),
             'time' => self::date(\DateTime::class, '!H:i:s', (string) $value),
@@ -143,7 +143,7 @@ final class Casts
             'simple_array', 'set' => implode(',', (array) $value),
             'datetime', 'datetimetz' => $value instanceof \DateTimeInterface ? ($this->utc ? self::inUtc($value) : $value)->format(self::DATETIME) : $value,
             'utc_datetime', 'utc_datetime_immutable' => $value instanceof \DateTimeInterface ? self::inUtc($value)->format(self::DATETIME) : $value,
-            'datetime_immutable', 'datetimetz_immutable' => $value instanceof \DateTimeInterface ? $value->format(self::DATETIME) : $value,
+            'datetime_immutable', 'datetimetz_immutable' => $value instanceof \DateTimeInterface ? ($this->utc ? self::inUtc($value) : $value)->format(self::DATETIME) : $value,
             'date', 'date_immutable' => $value instanceof \DateTimeInterface ? $value->format('Y-m-d') : $value,
             'time', 'time_immutable' => $value instanceof \DateTimeInterface ? $value->format('H:i:s') : $value,
             default => $value instanceof \BackedEnum ? $value->value : ($value instanceof \Stringable ? (string) $value : $value),

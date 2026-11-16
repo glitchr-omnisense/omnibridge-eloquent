@@ -4,8 +4,11 @@ namespace Omnibridge\Eloquent\Tests\Site;
 
 require_once __DIR__.'/autoload.php';
 
+use Base\Database\Repository\Entities;
+use Base\Database\Repository\EntityRepositories;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
+use Omnibridge\Doctrine\Omnibase\DoctrineFinders;
 use Omnibridge\Eloquent\Omnibase\EloquentPersistence;
 use Omnibridge\Eloquent\Tests\Support\FinderParity;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -412,10 +415,15 @@ final class FinderParityTest extends KernelTestCase
         return $scenarios;
     }
 
-    private function doctrine(string $class): EntityRepository
+    /** Doctrine's side: the same repositories as Eloquent's (the core's EntityRepositories), over Doctrine's Finders. */
+    private function doctrine(string $class): Entities
     {
-        return $this->entityManager->getRepository($class);
+        $this->doctrineRepositories ??= new EntityRepositories(DoctrineFinders::over($this->entityManager), static::getContainer());
+
+        return $this->doctrineRepositories->of($class);
     }
+
+    private ?EntityRepositories $doctrineRepositories = null;
 
     private function eloquent(string $class): object
     {
