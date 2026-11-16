@@ -45,9 +45,9 @@ final class AnalyticsParity
         $moments = null !== $from ? ['the writes\' hour' => $from] : array_filter([
             'all time' => new \DateTimeImmutable('2000-01-01 00:00:00', $utc),
             'thirty days' => (new \DateTimeImmutable('now', $utc))->modify('-30 days')->setTime(0, 0),
-            'the latest day' => $latest ? new \DateTimeImmutable(substr((string) $latest, 0, 10).' 00:00:00', $utc) : null,
+            'the latest day' => $latest ? new \DateTimeImmutable(substr(self::text($latest), 0, 10).' 00:00:00', $utc) : null,
         ]);
-        $pathsOf = static fn (string $table, string $order): array => array_map('strval', $connection->fetchFirstColumn("SELECT path FROM {$table} GROUP BY path ORDER BY {$order} DESC, path ASC LIMIT 2"));
+        $pathsOf = static fn (string $table, string $order): array => array_map(self::text(...), $connection->fetchFirstColumn("SELECT path FROM {$table} GROUP BY path ORDER BY {$order} DESC, path ASC LIMIT 2"));
         $viewed = null !== $from ? ['/f7f/a', '/f7f/b'] : $pathsOf($views, 'SUM(views)');
         $visited = null !== $from ? ['/f7f/a', '/f7f/b'] : $pathsOf($pageVisits, 'COUNT(*)');
         $filters = static fn (array $paths): array => array_filter([
@@ -57,7 +57,7 @@ final class AnalyticsParity
             'no page (an empty list)' => [[]],
             'a page with no row' => ['/f7f/none'],
         ]);
-        $types = array_map('strval', $connection->fetchFirstColumn("SELECT DISTINCT subject_type FROM {$visits} ORDER BY subject_type")) ?: ['visitor'];
+        $types = array_map(self::text(...), $connection->fetchFirstColumn("SELECT DISTINCT subject_type FROM {$visits} ORDER BY subject_type")) ?: ['visitor'];
 
         $scenarios = [];
         $add = static function (string $name, string $interface, string $method, array $arguments) use (&$scenarios, $doctrine, $eloquent): void {
@@ -107,6 +107,11 @@ final class AnalyticsParity
     {
         [$doctrine, $eloquent] = self::sides($entityManager, $persistence);
         $repository = 'doctrine' === $side ? $doctrine : $eloquent;
+        $pageViewsRepository = $repository(PageViews::class);
+        $pageVisitsRepository = $repository(PageVisits::class);
+        $visitsRepository = $repository(Visits::class);
+        $redirectionsRepository = $repository(Redirections::class);
+        \assert($pageViewsRepository instanceof PageViews && $pageVisitsRepository instanceof PageVisits && $visitsRepository instanceof Visits && $redirectionsRepository instanceof Redirections);
         $connection = $entityManager->getConnection();
         $views = $entityManager->getClassMetadata(PageView::class)->getTableName();
         $pageVisits = $entityManager->getClassMetadata(PageVisit::class)->getTableName();
@@ -118,17 +123,17 @@ final class AnalyticsParity
         // The latest row's hour, counted once more (an upsert that adds), and new pages of each source.
         $latest = $connection->fetchAssociative("SELECT path, date FROM {$views} ORDER BY date DESC, path ASC LIMIT 1") ?: null;
         if (null !== $latest) {
-            $repository(PageViews::class)->incrementView((string) $latest['path'], new \DateTimeImmutable((string) $latest['date'], $utc));
+            $pageViewsRepository->incrementView(self::text($latest['path']), new \DateTimeImmutable(self::text($latest['date']), $utc));
         }
         foreach ([PageView::SOURCE_HUMAN, PageView::SOURCE_HUMAN, PageView::SOURCE_BOT, PageView::SOURCE_AI] as $i => $source) {
-            $repository(PageViews::class)->incrementView('/f7f/a', $hour->modify("+{$i} minutes"), $source);
+            $pageViewsRepository->incrementView('/f7f/a', $hour->modify("+{$i} minutes"), $source);
         }
-        $repository(PageViews::class)->incrementView('/f7f/b', $hour->modify('+1 hour'));
-        $repository(PageViews::class)->incrementView(str_repeat('/f7f/long', 40), $hour);
+        $pageViewsRepository->incrementView('/f7f/b', $hour->modify('+1 hour'));
+        $pageViewsRepository->incrementView(str_repeat('/f7f/long', 40), $hour);
 
         foreach ([['/f7f/a', 'f7f-1', 0], ['/f7f/a', 'f7f-1', 30], ['/f7f/b', 'f7f-1', 61], ['/f7f/a', 'f7f-2', 5]] as [$path, $subject, $minutes]) {
-            $repository(PageVisits::class)->recordPresence($path, 'visitor', $subject, $hour->modify("+{$minutes} minutes"));
-            $repository(Visits::class)->recordPresence('visitor', $subject, $hour->modify("+{$minutes} minutes"));
+            $pageVisitsRepository->recordPresence($path, 'visitor', $subject, $hour->modify("+{$minutes} minutes"));
+            $visitsRepository->recordPresence('visitor', $subject, $hour->modify("+{$minutes} minutes"));
         }
 
         // A redirection written for the hits (the site has none), then hit twice.
@@ -136,9 +141,10 @@ final class AnalyticsParity
         $entityManager->persist($redirection);
         $entityManager->flush();
         $id = $redirection->getId();
+        \assert(null !== $id);
         $hit = 'doctrine' === $side ? $redirection : ($persistence->repositories()->implementing(Redirections::class)->find($id) ?? throw new \LogicException('The redirection was not read by Eloquent.'));
-        $repository(Redirections::class)->hit($hit);
-        $repository(Redirections::class)->hit($hit);
+        $redirectionsRepository->hit($hit);
+        $redirectionsRepository->hit($hit);
 
         $since = $hour->format('Y-m-d H:i:s');
         $rows = static fn (string $sql, array $params = []): array => array_map(
@@ -146,9 +152,9 @@ final class AnalyticsParity
                 unset($row['id']);
                 ksort($row);
 
-                return array_map(static fn ($value) => null === $value ? null : (string) $value, $row);
+                return array_map(static fn ($value) => null === $value ? null : self::text($value), $row);
             },
-            $connection->fetchAllAssociative($sql, $params),
+            $connection->fetchAllAssociative($sql, array_values($params)),
         );
 
         return [
@@ -227,5 +233,11 @@ final class AnalyticsParity
                 return $persistence->repositories()->implementing($interface);
             },
         ];
+    }
+
+    /** A column's value as the text the comparisons read (a scalar; anything else is no text). */
+    private static function text(mixed $value): string
+    {
+        return \is_scalar($value) || $value instanceof \Stringable ? (string) $value : '';
     }
 }

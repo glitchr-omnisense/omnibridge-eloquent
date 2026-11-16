@@ -107,7 +107,11 @@ final class LanguageParityTest extends TestCase
         return 'doctrine' === $backend ? DoctrineFinders::over($this->entityManager) : new EloquentFinders($this->store, new EloquentUnitOfWork($this->store));
     }
 
-    /** @return list<string> */
+    /**
+     * @param iterable<mixed> $threads
+     *
+     * @return list<string>
+     */
     private static function titles(iterable $threads): array
     {
         return array_values(array_map(static fn (mixed $thread): string => $thread instanceof Thread ? $thread->getTitle() : get_debug_type($thread), [...$threads]));
@@ -162,7 +166,7 @@ final class LanguageParityTest extends TestCase
     public function testExistsAndNotExists(string $backend): void
     {
         $users = new ServiceEntityRepository($this->finders($backend), User::class);
-        $emails = static fn (array $users): array => array_map(static fn (User $user): string => $user->getEmail(), $users);
+        $emails = static fn (array $users): array => array_map(static fn (mixed $user): string => $user instanceof User ? $user->getEmail() : get_debug_type($user), $users);
 
         self::assertSame(['alice@example.org', 'bob@example.org'], $emails($users->findBy([Criterion::exists(Thread::class, 'author')], ['email' => 'ASC'])));
         self::assertSame(['carol@example.org'], $emails($users->findBy([Criterion::notExists(Thread::class, 'author')])));

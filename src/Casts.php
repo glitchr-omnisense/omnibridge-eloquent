@@ -105,7 +105,11 @@ final class Casts
             $value = stream_get_contents($value);
         }
 
-        return match ($resolved = $this->resolve($type)) {
+        $resolved = $this->resolve($type);
+        // An omnibase site reads its immutable dates in UTC too: as utc_datetime_immutable.
+        $read = $this->utc && \in_array($resolved, ['datetime_immutable', 'datetimetz_immutable'], true) ? 'utc_datetime_immutable' : $resolved;
+
+        return match ($read) {
             'integer', 'smallint' => (int) $value,
             'bigint' => \is_int($value) ? $value : ((string) (int) $value === (string) $value ? (int) $value : (string) $value),
             'boolean' => (bool) $value,
@@ -116,7 +120,7 @@ final class Casts
             'datetime', 'datetimetz' => $this->utc ? self::utcDateTime((string) $value) : self::date(\DateTime::class, self::DATETIME, (string) $value),
             'utc_datetime' => self::utcDateTime((string) $value),
             'utc_datetime_immutable' => \DateTimeImmutable::createFromMutable(self::utcDateTime((string) $value)),
-            'datetime_immutable', 'datetimetz_immutable' => $this->utc ? \DateTimeImmutable::createFromMutable(self::utcDateTime((string) $value)) : self::date(\DateTimeImmutable::class, self::DATETIME, (string) $value),
+            'datetime_immutable', 'datetimetz_immutable' => self::date(\DateTimeImmutable::class, self::DATETIME, (string) $value),
             'date' => self::date(\DateTime::class, '!Y-m-d', (string) $value),
             'date_immutable' => self::date(\DateTimeImmutable::class, '!Y-m-d', (string) $value),
             'time' => self::date(\DateTime::class, '!H:i:s', (string) $value),

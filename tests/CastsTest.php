@@ -16,6 +16,7 @@ final class CastsTest extends TestCase
             $value = str_contains($type, 'immutable') ? $paris : \DateTime::createFromImmutable($paris);
             self::assertSame('2026-10-18 07:30:00', $casts->toDatabase($type, $value), $type);
             $read = $casts->toPhp($type, '2026-10-18 07:30:00');
+            self::assertInstanceOf(\DateTimeInterface::class, $read);
             self::assertSame('2026-10-18T07:30:00+00:00', $read->format(\DATE_ATOM), $type);
             self::assertSame(str_contains($type, 'immutable'), $read instanceof \DateTimeImmutable, $type);
         }

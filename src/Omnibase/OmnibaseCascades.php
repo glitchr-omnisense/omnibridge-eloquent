@@ -28,7 +28,7 @@ final class OmnibaseCascades
             }
 
             // #[Cascade] and #[OrphanRemoval]: the core's one reading (Doctrine's mapping takes the same).
-            return Cascade::resolve($class, $property, $cascade, $orphanRemoval);
+            return Cascade::resolve($class, $property, array_values(array_filter($cascade, \is_string(...))), $orphanRemoval);
         };
     }
 }

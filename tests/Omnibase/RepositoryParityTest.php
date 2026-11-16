@@ -93,12 +93,14 @@ final class RepositoryParityTest extends TestCase
     }
 
     /**
-     * @param iterable<mixed> $threads
+     * @param mixed $threads a page's result, iterable
      *
      * @return list<string>
      */
-    private static function titles(iterable $threads): array
+    private static function titles(mixed $threads): array
     {
+        self::assertIsIterable($threads);
+
         return array_values(array_map(static fn (mixed $thread): string => $thread instanceof Thread ? $thread->getTitle() : get_debug_type($thread), [...$threads]));
     }
 
@@ -193,10 +195,14 @@ final class RepositoryParityTest extends TestCase
         self::assertSame(['Four'], self::titles($second->getResult()));
         self::assertSame(['Four', 'One', 'Three', 'Two'], self::titles($paginator->paginate($threads, [], ['title' => 'ASC'])->getResult()), 'no criteria: every row, the default page size');
 
-        $result = $paginator->paginate($threads->findByAuthor(self::$ids['alice'], [], ['title' => 'ASC']), page: 2, pageSize: 2);
+        $byAuthor = $threads->findByAuthor(self::$ids['alice'], [], ['title' => 'ASC']);
+        self::assertInstanceOf(\Base\Service\Model\Pages::class, $byAuthor);
+        $result = $paginator->paginate($byAuthor, page: 2, pageSize: 2);
         self::assertSame(3, $result->getTotalCount(), 'a finder\'s Result');
         self::assertSame(['Three'], self::titles($result->getResult()));
-        self::assertSame(['c'], array_values($paginator->paginate(['a', 'b', 'c'], page: 3, pageSize: 1)->getResult()), 'rows');
+        $rows = $paginator->paginate(['a', 'b', 'c'], page: 3, pageSize: 1)->getResult();
+        self::assertIsArray($rows);
+        self::assertSame(['c'], array_values($rows), 'rows');
 
         $this->expectException(\InvalidArgumentException::class);
         $paginator->paginate(['a'], ['title' => 'One']);
@@ -223,7 +229,9 @@ final class RepositoryParityTest extends TestCase
         self::assertInstanceOf(\Omnibridge\Eloquent\Tests\Fixtures\Repository\TagRepository::class, $tags);
         self::assertSame($repositories, $tags->repositories);
         $withUnitOfWork = new EntityRepositories('doctrine' === $backend ? $this->finders($backend) : new EloquentFinders(self::$store ?? throw new \LogicException(), new \Omnibridge\Eloquent\EloquentUnitOfWork(self::$store)));
-        self::assertInstanceOf(\Omnibridge\Persistence\UnitOfWork::class, $withUnitOfWork->of(Tag::class)->unitOfWork);
+        $tagsWithUnitOfWork = $withUnitOfWork->of(Tag::class);
+        self::assertInstanceOf(\Omnibridge\Eloquent\Tests\Fixtures\Repository\TagRepository::class, $tagsWithUnitOfWork);
+        self::assertInstanceOf(\Omnibridge\Persistence\UnitOfWork::class, $tagsWithUnitOfWork->unitOfWork);
         // A subclass of an entity with a registered repository gets it.
         $repositories->register(Thread::class, ThreadRepository::class);
         self::assertInstanceOf(ThreadRepository::class, $repositories->of(Article::class));

@@ -35,7 +35,7 @@ class ThreadRepository extends ServiceEntityRepository
         $rows = $this->sql('SELECT t.{Thread.title} AS title FROM {Thread} t ORDER BY LENGTH(t.{Thread.title}) DESC, t.{Thread.id} ASC LIMIT '.$limit);
         \assert(\is_array($rows));
 
-        return array_column($rows, 'title');
+        return array_map(static fn (mixed $title): string => \is_scalar($title) ? (string) $title : '', array_column($rows, 'title'));
     }
 
     /**
@@ -49,7 +49,7 @@ class ThreadRepository extends ServiceEntityRepository
         $rows = $this->sql('SELECT p.{Page.title} AS title FROM {Page} p WHERE p.{Page.position} > ? ORDER BY p.{Page.position} DESC', [0]);
         \assert(\is_array($rows));
 
-        return array_column($rows, 'title');
+        return array_map(static fn (mixed $title): string => \is_scalar($title) ? (string) $title : '', array_column($rows, 'title'));
     }
 
     /**
@@ -62,6 +62,6 @@ class ThreadRepository extends ServiceEntityRepository
         $rows = $this->sql('SELECT t.{Thread.title} AS title FROM {Thread} t WHERE t.{Thread.author} = ? ORDER BY t.{Thread.id} ASC', [$author]);
         \assert(\is_array($rows));
 
-        return array_column($rows, 'title');
+        return array_map(static fn (mixed $title): string => \is_scalar($title) ? (string) $title : '', array_column($rows, 'title'));
     }
 }

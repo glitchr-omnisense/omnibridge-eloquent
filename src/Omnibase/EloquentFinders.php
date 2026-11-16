@@ -68,7 +68,7 @@ final class EloquentFinders implements Finders
     {
         $values = [];
         $written = '';
-        $given = array_values($parameters);
+        $given = $parameters;
         foreach (preg_split('/\{selection:(\d+)\}/', $sql, -1, \PREG_SPLIT_DELIM_CAPTURE) ?: [$sql] as $index => $piece) {
             if (1 === $index % 2) {
                 [$class, $criteria] = $selections[(int) $piece] ?? throw new \LogicException(sprintf('No selection %s for %s.', $piece, $sql));
@@ -84,9 +84,19 @@ final class EloquentFinders implements Finders
         }
         $connection = $this->store->connection();
 
-        return \Omnibridge\Eloquent\Omnibase\Finder\DatabaseErrors::reading(static fn (): array|int => 1 === preg_match('/^\s*(SELECT|WITH)\b/i', $written)
-            ? array_map(static fn (mixed $row): array => (array) $row, $connection->select($written, $values))
-            : $connection->affectingStatement($written, $values));
+        return \Omnibridge\Eloquent\Omnibase\Finder\DatabaseErrors::reading(static function () use ($connection, $written, $values): array|int {
+            if (1 !== preg_match('/^\s*(SELECT|WITH)\b/i', $written)) {
+                return $connection->affectingStatement($written, $values);
+            }
+            $rows = [];
+            foreach ($connection->select($written, $values) as $row) {
+                /** @var array<string, mixed> $fields a row's columns by name */
+                $fields = (array) $row;
+                $rows[] = $fields;
+            }
+
+            return $rows;
+        });
     }
 
     public function platform(): string

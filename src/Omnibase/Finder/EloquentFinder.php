@@ -126,6 +126,8 @@ class EloquentFinder
      *
      * @internal
      *
+     * @param array<mixed> $criteria
+     *
      * @return array{0: string, 1: list<mixed>}
      */
     public function identifiers(array $criteria): array
@@ -140,7 +142,7 @@ class EloquentFinder
             $builder = $compilation->query;
             $builder->select($this->map->idColumns()[0])->distinct();
 
-            return [$builder->toSql(), array_values($builder->getBindings())];
+            return [$builder->toSql(), $builder->getBindings()];
         } finally {
             $this->options = [];
             $this->separator = null;
@@ -785,7 +787,7 @@ class EloquentFinder
             // Partial on a JSON field: a LIKE on its text (any of the patterns; none of them with NotEqualTo), as on Doctrine.
             $parts = [];
             foreach (\is_array($fieldValue) ? array_values($fieldValue) : [$fieldValue] as $pattern) {
-                $parts[] = Conditions::raw($isInsensitive ? 'LOWER('.$column.') LIKE LOWER(?)' : $column.' LIKE ?', [(string) $pattern]);
+                $parts[] = Conditions::raw($isInsensitive ? 'LOWER('.$column.') LIKE LOWER(?)' : $column.' LIKE ?', [\is_scalar($pattern) || $pattern instanceof \Stringable ? (string) $pattern : '']);
             }
             if ([] === $parts) {
                 return Conditions::raw('1 = 1');
@@ -1052,7 +1054,11 @@ class EloquentFinder
             return false;
         }
         $field = $map->identifier[0];
-        $property = new \ReflectionProperty($field->declaredIn ?? $map->className(), $field->property);
+        $declaring = $field->declaredIn ?? $map->className();
+        if (!class_exists($declaring)) {
+            return false;
+        }
+        $property = new \ReflectionProperty($declaring, $field->property);
         if ((new \ReflectionClass($value))->isUninitializedLazyObject($value)) {
             return false;
         }
