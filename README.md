@@ -121,5 +121,5 @@ vendor (`tests/Site/autoload.php` appends its class loader): every entity of the
 Doctrine and through the store on the same connection, on a sample of the site's rows (with and without the
 trash scope) and on a row written for each class in a transaction rolled back - see [docs/testing.md](docs/testing.md).
 
-Requires PHP 8.4 (lazy objects), illuminate/database 12 or 13, doctrine/collections 2 or 3, omnisense/omnibridge 1;
-omnibase's part omnisense/omnibase 1.
+Requires PHP 8.4 (lazy objects), illuminate/database 12 or 13, doctrine/collections 2 or 3, omnisense/omnibridge 2;
+omnibase's part omnisense/omnibase 7.
