@@ -5,7 +5,7 @@ namespace Omnibridge\Eloquent\Tests;
 use Omnibridge\Eloquent\Casts;
 use PHPUnit\Framework\TestCase;
 
-/** One time: an omnibase site's casts (Casts::utc()) write and read every date and time type in UTC, as Doctrine's. */
+/** One time: an omnibase site's casts (Casts::utc()) write and read every date and time type in UTC, immutable, as Doctrine's. */
 final class CastsTest extends TestCase
 {
     public function testEveryDateTimeTypeIsWrittenAndReadInUtc(): void
@@ -18,7 +18,8 @@ final class CastsTest extends TestCase
             $read = $casts->toPhp($type, '2026-10-18 07:30:00');
             self::assertInstanceOf(\DateTimeInterface::class, $read);
             self::assertSame('2026-10-18T07:30:00+00:00', $read->format(\DATE_ATOM), $type);
-            self::assertSame(str_contains($type, 'immutable'), $read instanceof \DateTimeImmutable, $type);
+            // omnibridge/doctrine 4.0: every one of them is read as a \DateTimeImmutable (a \DateTime is still written).
+            self::assertInstanceOf(\DateTimeImmutable::class, $read, $type);
         }
     }
 }

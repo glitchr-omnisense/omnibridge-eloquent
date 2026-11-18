@@ -23,7 +23,7 @@
         "omnisense/omnibridge": "^2.0"
     },
     "require-dev": {
-        "omnibridge/doctrine": "^3.0",
+        "omnibridge/doctrine": "^4.0",
         "omnisense/omnibase": "^7.0",
         "phpunit/phpunit": "^11.5",
         "symfony/validator": "^7.0|^8.0"

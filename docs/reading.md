@@ -54,7 +54,7 @@ The entities are made without their constructor and their properties written raw
   string, text, ascii_string, guid, json, simple_array (NULL as `[]`), datetime, datetimetz, date, time and their
   `_immutable`, binary, blob;
 - `Casts::utc()`: datetime and datetimetz in UTC, utc_datetime and utc_datetime_immutable (omnibridge/doctrine's
-  `Types::register()`);
+  `Types::provider()`), each read as a `\DateTimeImmutable`;
 - `->with('money', $toPhp, $toDatabase)`: an application's own type;
 - the `ColumnTypes` given: an alias followed, an enumeration's value as its string, a set's values as a list.
 

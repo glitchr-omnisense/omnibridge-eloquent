@@ -39,8 +39,8 @@ composer require omnibridge/eloquent
   inverse, one-to-many or through its join table.
 - `IdentityMap`: one object per row, by root class and identifier.
 - `Casts`: a column's value as the entity holds it, and back, by the type's name - DBAL's portable types
-  (dates in PHP's zone, or in UTC with `Casts::utc()` as omnibridge/doctrine's `Types::register()` reads
-  them; JSON; simple_array; bigint...), an application's own types given with `with()` or read from its
+  (dates in PHP's zone, or in UTC with `Casts::utc()` as omnibridge/doctrine's `Types::provider()` reads
+  them, as `\DateTimeImmutable`; JSON; simple_array; bigint...), an application's own types given with `with()` or read from its
   `ColumnTypes` (an alias followed, an enumeration's value, a set's values). A type nothing knows is
   refused.
 - `EloquentUnitOfWork`: omnisense/omnibridge's `UnitOfWork` and `Snapshots`, writing as Doctrine's unit of

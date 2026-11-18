@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.0
+
+The dates as omnibridge/doctrine 4.0 reads them: an omnibase site's casts (`Casts::utc()`) read `datetime` and
+`datetimetz`, and `utc_datetime` under any casts, as a `\DateTimeImmutable` in UTC (they were `\DateTime`), as they
+read `datetime_immutable`, `datetimetz_immutable` and `utc_datetime_immutable`; the parity of the two persistences
+holds. Any `\DateTimeInterface` is still written, in UTC. `Casts` without `utc()` reads DBAL's own types as DBAL does
+(`datetime` mutable, in PHP's zone); `date` and `time` are unchanged. require-dev: omnibridge/doctrine ^4.0. The test
+fixture `Thread::$createdAt` is a `\DateTimeInterface`.
+
 ## 2.0.0
 
 omnibridge/eloquent: omnibase's persistence on Eloquent's database layer (illuminate/database), framework-free - a

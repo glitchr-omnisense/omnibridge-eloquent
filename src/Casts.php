@@ -17,7 +17,8 @@ use Omnibridge\Schema\Database\ColumnTypes;
  *   default zone as DBAL reads them), binary and blob (kept as they come);
  * - utc(): datetime, datetimetz and their _immutable read and written in UTC,
  *   and utc_datetime, utc_datetime_immutable - omnibridge/doctrine's
- *   Types::register(), which omnibase sites run on (one time: UTC);
+ *   Types::provider(), which omnibase sites run on (one time: UTC); every one
+ *   of them read as a \DateTimeImmutable, as omnibridge/doctrine 4.0 reads them;
  * - an application's own types: a conversion given by name (with()), else what
  *   its ColumnTypes say - an alias followed to its portable type, an
  *   enumeration's value as the string it is, a set's values as a list.
@@ -43,7 +44,7 @@ final class Casts
     ) {
     }
 
-    /** The conversions of an omnibase site: datetime, datetimetz and their _immutable in UTC, the utc_ types (omnibridge/doctrine's Types::register()). */
+    /** The conversions of an omnibase site: datetime, datetimetz and their _immutable in UTC, the utc_ types (omnibridge/doctrine's Types::provider()), read as \DateTimeImmutable. */
     public static function utc(?ColumnTypes $columnTypes = null): self
     {
         return new self($columnTypes, true);
@@ -117,9 +118,9 @@ final class Casts
             'decimal', 'string', 'text', 'ascii_string', 'guid', 'enum' => (string) $value,
             'json' => '' === $value ? null : json_decode((string) $value, true, 512, \JSON_THROW_ON_ERROR),
             'simple_array', 'set' => '' === $value ? [] : explode(',', (string) $value),
+            // omnibridge/doctrine 4.0: an omnibase site's datetime and datetimetz, and utc_datetime, are read immutable, in UTC.
             'datetime', 'datetimetz' => $this->utc ? self::utcDateTime((string) $value) : self::date(\DateTime::class, self::DATETIME, (string) $value),
-            'utc_datetime' => self::utcDateTime((string) $value),
-            'utc_datetime_immutable' => \DateTimeImmutable::createFromMutable(self::utcDateTime((string) $value)),
+            'utc_datetime', 'utc_datetime_immutable' => self::utcDateTime((string) $value),
             'datetime_immutable', 'datetimetz_immutable' => self::date(\DateTimeImmutable::class, self::DATETIME, (string) $value),
             'date' => self::date(\DateTime::class, '!Y-m-d', (string) $value),
             'date_immutable' => self::date(\DateTimeImmutable::class, '!Y-m-d', (string) $value),
@@ -182,12 +183,12 @@ final class Casts
         throw new \DomainException(\sprintf('No conversion for the column type "%s": give it with Casts::with() or in the ColumnTypes.', $type));
     }
 
-    private static function utcDateTime(string $value): \DateTime
+    private static function utcDateTime(string $value): \DateTimeImmutable
     {
         $zone = new \DateTimeZone('UTC');
 
-        return \DateTime::createFromFormat(self::DATETIME, $value, $zone)
-            ?: (date_create($value, $zone) ?: throw new \UnexpectedValueException(\sprintf('"%s" is no date and time.', $value)));
+        return \DateTimeImmutable::createFromFormat(self::DATETIME, $value, $zone)
+            ?: (date_create_immutable($value, $zone) ?: throw new \UnexpectedValueException(\sprintf('"%s" is no date and time.', $value)));
     }
 
     /**

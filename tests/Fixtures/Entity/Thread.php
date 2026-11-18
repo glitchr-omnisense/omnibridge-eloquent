@@ -20,7 +20,7 @@ class Thread
     protected string $title = '';
 
     #[ORM\Column(type: 'datetime')]
-    protected \DateTime $createdAt;
+    protected \DateTimeInterface $createdAt;
 
     #[ORM\Column(type: 'datetime_immutable', nullable: true)]
     protected ?\DateTimeImmutable $publishedAt = null;
@@ -57,7 +57,7 @@ class Thread
     public function getAuthor(): ?User { return $this->author; }
     public function setPublishedAt(?\DateTimeImmutable $at): static { $this->publishedAt = $at; return $this; }
     public function getPublishedAt(): ?\DateTimeImmutable { return $this->publishedAt; }
-    public function getCreatedAt(): \DateTime { return $this->createdAt; }
+    public function getCreatedAt(): \DateTimeInterface { return $this->createdAt; }
     /** @return Collection<int, Tag> */
     public function getTags(): Collection { return $this->tags; }
     public function addTag(Tag $tag): static { $this->tags->add($tag); return $this; }
