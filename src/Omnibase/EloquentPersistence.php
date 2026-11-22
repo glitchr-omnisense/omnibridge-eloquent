@@ -29,7 +29,9 @@ use Omnibridge\Persistence\Lifecycle\Listeners;
  *     $persistence = EloquentPersistence::create(Connections::url($_ENV['DATABASE_URL']), ['project_dir' => $projectDir]);
  *     $article = $persistence->repositories()->oneById(Article::class, 12);
  *
- * Options: EntitySchema's (project_dir, enumerations, types, resolve_target_entities, rules, column_types),
+ * Options: EntitySchema's (project_dir, enumerations, types, resolve_target_entities, rules, column_types; since
+ * omnisense/omnibase 7.2 packages and exclude: the packages discovered, their enumerations and targets, and the files
+ * and folders of mapped classes left out),
  * `directories` (more entity folders, a bundle's), `repositories` (an application's repositories by entity, over those
  * the mapping names: EntityRepositories::register()), `services` (a PSR-11 container: a repository's own services),
  * `dispatcher` (the host's PSR-14 dispatcher, given the unit of work's Lifecycle events), `lifecycle` (omnibase's

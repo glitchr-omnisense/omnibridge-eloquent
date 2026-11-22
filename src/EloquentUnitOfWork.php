@@ -36,6 +36,10 @@ use Psr\EventDispatcher\EventDispatcherInterface;
  *      PersistentCollection in its place), the removed entities taken out of the collections; PostFlush.
  *   A flush that fails is rolled back and closes the unit of work, as Doctrine closes its entity manager.
  * - PostLoad for each entity the store reads, once the read is done.
+ * - Before the listeners of each entity event, the entity's lifecycle callbacks (#[HasLifecycleCallbacks] with
+ *   #[PrePersist], #[PreUpdate]...: omnisense/omnibridge's Schema\Entity::$callbacks, its parents' first), called
+ *   with the event as Doctrine calls them with its arguments; a PreUpdate callback's changes recomputed as a
+ *   listener's are; the preFlush callbacks of each entity whose change set is computed, as Doctrine calls them.
  * - The events are omnisense/omnibridge's Lifecycle events, given to the listeners (listen()) and to a PSR-14
  *   dispatcher: the behaviours of an application (omnibase's attributes) run on them, whichever backend writes.
  * - transactional(): the work, then a flush, in one transaction.
@@ -669,6 +673,10 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
     {
         $oid = spl_object_id($entity);
         $map = $this->store->mapping()->of($entity::class);
+        // Doctrine's computeChangeSet(): the entity's preFlush callbacks first (the manager's PreFlush ran in commit()).
+        if ([] !== ($map->entity->callbacks['preFlush'] ?? [])) {
+            $this->callbacks($entity, 'preFlush', new Lifecycle\PreFlush($this));
+        }
         $actual = $this->actual($map, $entity, true);
 
         if (isset($this->insertions[$oid])) {
@@ -1093,10 +1101,27 @@ final class EloquentUnitOfWork implements UnitOfWork, Snapshots
 
     private function dispatch(object $event): void
     {
+        // Doctrine's ListenersInvoker: the entity's lifecycle callbacks before any listener.
+        if ($event instanceof Lifecycle\EntityEvent) {
+            $this->callbacks($event->entity, lcfirst((new \ReflectionClass($event))->getShortName()), $event);
+        }
         foreach ($this->listeners as $listener) {
             $listener($event);
         }
         $this->dispatcher?->dispatch($event);
+    }
+
+    /**
+     * The entity's lifecycle callbacks of an event (omnisense/omnibridge's Schema\Entity::$callbacks: the methods of a
+     * class marked #[HasLifecycleCallbacks] carrying #[PrePersist], #[PreUpdate]..., its parents' first), each called
+     * with the event, as Doctrine calls them with its event arguments.
+     */
+    private function callbacks(object $entity, string $event, object $arguments): void
+    {
+        $entityMap = $this->store->mapping()->of($entity::class);
+        foreach ($entityMap->entity->callbacks[$event] ?? [] as $method) {
+            $entity->{$method}($arguments);
+        }
     }
 
     private function open(): void
